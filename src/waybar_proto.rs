@@ -21,7 +21,7 @@ impl WaybarLine {
 
         if let Some(c) = &snap.codex {
             let pct = c.worst_percent().unwrap_or(0);
-            parts.push(format!("C {pct}%"));
+            parts.push(format!("C {}%", remaining_percent(pct)));
             worst = worst.max(pct);
             tooltip.extend(c.tooltip_lines());
             state = state.combine(c.state(cfg));
@@ -33,7 +33,7 @@ impl WaybarLine {
 
         if let Some(c) = &snap.claude {
             let pct = c.worst_percent().unwrap_or(0);
-            parts.push(format!("Cl {pct}%"));
+            parts.push(format!("Cl {}%", remaining_percent(pct)));
             worst = worst.max(pct);
             tooltip.extend(c.tooltip_lines());
             state = state.combine(c.state(cfg));
@@ -69,6 +69,10 @@ impl WaybarLine {
             percentage: worst,
         }
     }
+}
+
+fn remaining_percent(used: u8) -> u8 {
+    100_u8.saturating_sub(used.min(100))
 }
 
 #[derive(Clone, Copy)]

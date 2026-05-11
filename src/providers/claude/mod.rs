@@ -50,18 +50,12 @@ pub struct ClaudeData {
 
 impl ClaudeSnapshot {
     pub fn worst_percent(&self) -> Option<u8> {
-        let s = self.session.as_ref().map(|w| w.used_percent).unwrap_or(0.0);
-        let w = self.weekly.as_ref().map(|w| w.used_percent).unwrap_or(0.0);
-        let pct = s.max(w).round().clamp(0.0, 100.0) as u8;
-        if self.session.is_some() || self.weekly.is_some() {
-            Some(pct)
-        } else {
-            None
-        }
+        let s = self.session.as_ref().map(|w| w.used_percent)?;
+        Some(s.round().clamp(0.0, 100.0) as u8)
     }
 
     pub fn state(&self, cfg: &Config) -> State {
-        if self.error.is_some() && self.session.is_none() && self.weekly.is_none() {
+        if self.error.is_some() && self.session.is_none() {
             return State::Auth;
         }
         State::from_pct(self.worst_percent().unwrap_or(0), cfg)
@@ -83,12 +77,6 @@ impl ClaudeSnapshot {
         out.push(header);
         if let Some(w) = &self.session {
             out.push(window_line("  session", w));
-        }
-        if let Some(w) = &self.weekly {
-            out.push(window_line("  weekly", w));
-        }
-        if let Some(w) = &self.sonnet_weekly {
-            out.push(window_line("  sonnet (weekly)", w));
         }
         if let Some(e) = &self.extra {
             out.push(format!(

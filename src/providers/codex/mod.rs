@@ -35,22 +35,12 @@ pub struct Credits {
 
 impl CodexSnapshot {
     pub fn worst_percent(&self) -> Option<u8> {
-        let p = self.primary.as_ref().map(|w| w.used_percent).unwrap_or(0.0);
-        let s = self
-            .secondary
-            .as_ref()
-            .map(|w| w.used_percent)
-            .unwrap_or(0.0);
-        let pct = p.max(s).round().clamp(0.0, 100.0) as u8;
-        if self.primary.is_some() || self.secondary.is_some() {
-            Some(pct)
-        } else {
-            None
-        }
+        let p = self.primary.as_ref().map(|w| w.used_percent)?;
+        Some(p.round().clamp(0.0, 100.0) as u8)
     }
 
     pub fn state(&self, cfg: &Config) -> State {
-        if self.error.is_some() && self.primary.is_none() && self.secondary.is_none() {
+        if self.error.is_some() && self.primary.is_none() {
             return State::Auth;
         }
         State::from_pct(self.worst_percent().unwrap_or(0), cfg)
@@ -72,9 +62,6 @@ impl CodexSnapshot {
         out.push(header);
         if let Some(w) = &self.primary {
             out.push(window_line("  primary", w));
-        }
-        if let Some(w) = &self.secondary {
-            out.push(window_line("  secondary", w));
         }
         if let Some(c) = &self.credits
             && c.has_credits
