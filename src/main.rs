@@ -11,7 +11,11 @@ mod util;
 mod waybar_proto;
 
 #[derive(Parser)]
-#[command(name = "ai_bar", version, about = "AI coding usage limits in your Waybar")]
+#[command(
+    name = "ai_bar",
+    version,
+    about = "AI coding usage limits in your Waybar"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Cmd,
@@ -25,6 +29,12 @@ enum Cmd {
     Status {
         #[arg(long)]
         detailed: bool,
+    },
+    /// Interactive terminal popover inspired by CodexBar.
+    Tui {
+        /// Local snapshot polling interval while the popup is open.
+        #[arg(long, default_value_t = 2)]
+        poll_secs: u64,
     },
     /// 30-day local cost scan from JSONL session logs.
     Cost {
@@ -42,7 +52,9 @@ enum Cmd {
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
+        )
         .with_writer(std::io::stderr)
         .init();
 
@@ -56,6 +68,7 @@ fn main() -> Result<()> {
         match cli.command {
             Cmd::Waybar => cli::waybar::run().await,
             Cmd::Status { detailed } => cli::status::run(detailed).await,
+            Cmd::Tui { poll_secs } => cli::tui::run(poll_secs).await,
             Cmd::Cost { provider } => cli::cost::run(provider).await,
             Cmd::Config {
                 print,

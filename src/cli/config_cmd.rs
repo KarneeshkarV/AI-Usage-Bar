@@ -29,7 +29,7 @@ fn print_snippets() {
     println!(r#""custom/ai_bar": {{"#);
     println!(r#"    "exec": "{bin} waybar","#);
     println!(r#"    "return-type": "json","#);
-    println!(r#"    "on-click": "ghostty --class=ai_bar-popup -e {bin} status --detailed; sleep 1","#);
+    println!(r#"    "on-click": "omarchy-launch-floating-terminal-with-presentation {bin} tui","#);
     println!(r#"    "tooltip": true"#);
     println!("}}");
     println!();
