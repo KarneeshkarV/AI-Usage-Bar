@@ -132,15 +132,12 @@ fn enumerate_profiles(base: &Path) -> Vec<PathBuf> {
 
 fn locate_cookies_file(profile: &Path) -> Option<PathBuf> {
     // Newer Chromium puts it under Network/Cookies; older versions used Cookies directly.
-    for candidate in [
+    [
         profile.join("Network").join("Cookies"),
         profile.join("Cookies"),
-    ] {
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
 }
 
 async fn derive_key_via_secret_service(app_names: &[&str]) -> Result<[u8; KEY_LEN]> {
@@ -187,10 +184,10 @@ fn read_session_key(db_path: &Path, key: &[u8; KEY_LEN]) -> Result<Option<String
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
         let blob: Vec<u8> = row.get(0)?;
-        if let Some(pt) = decrypt_cookie_value(&blob, key)? {
-            if pt.starts_with("sk-ant-") {
-                return Ok(Some(pt));
-            }
+        if let Some(pt) = decrypt_cookie_value(&blob, key)?
+            && pt.starts_with("sk-ant-")
+        {
+            return Ok(Some(pt));
         }
     }
     Ok(None)
@@ -223,17 +220,16 @@ fn decrypt_cookie_value(blob: &[u8], key: &[u8; KEY_LEN]) -> Result<Option<Strin
     // Chromium may prepend a 32-byte SHA-256 of the cookie host (since ~v130 on Linux).
     // Heuristic: try the raw decode; if not valid UTF-8 or doesn't look like the key,
     // strip 32 bytes and try again.
-    if let Ok(s) = std::str::from_utf8(plaintext) {
-        if s.starts_with("sk-ant-") {
-            return Ok(Some(s.to_string()));
-        }
+    if let Ok(s) = std::str::from_utf8(plaintext)
+        && s.starts_with("sk-ant-")
+    {
+        return Ok(Some(s.to_string()));
     }
-    if plaintext.len() > 32 {
-        if let Ok(s) = std::str::from_utf8(&plaintext[32..]) {
-            if s.starts_with("sk-ant-") {
-                return Ok(Some(s.to_string()));
-            }
-        }
+    if plaintext.len() > 32
+        && let Ok(s) = std::str::from_utf8(&plaintext[32..])
+        && s.starts_with("sk-ant-")
+    {
+        return Ok(Some(s.to_string()));
     }
     Ok(None)
 }

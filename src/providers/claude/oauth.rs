@@ -3,7 +3,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use secret_service::{EncryptionType, SecretService};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, Clone)]
 pub struct OAuthMeta {
@@ -51,7 +51,7 @@ fn from_file() -> Result<OAuthMeta> {
     anyhow::bail!("no oauth file found");
 }
 
-fn parse_creds_blob(raw: &str, path: &PathBuf) -> Result<OAuthMeta> {
+fn parse_creds_blob(raw: &str, path: &Path) -> Result<OAuthMeta> {
     let creds: StoredCreds =
         serde_json::from_str(raw).with_context(|| format!("parse {}", path.display()))?;
     let token = creds.id_token.or(creds.access_token).context("no token")?;

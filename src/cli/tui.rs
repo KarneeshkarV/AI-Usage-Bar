@@ -95,13 +95,13 @@ pub async fn run(poll_secs: u64) -> Result<()> {
             .saturating_duration_since(Instant::now())
             .min(Duration::from_millis(250));
 
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => break,
-                    KeyCode::Char('r') => app.refresh(),
-                    _ => {}
-                }
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+        {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Char('r') => app.refresh(),
+                _ => {}
             }
         }
 
@@ -124,7 +124,10 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &App) {
         .title(Line::from(vec![
             Span::raw(" "),
             Span::styled("◆", Style::default().fg(MAUVE)),
-            Span::styled(" ai bar ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " ai bar ",
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            ),
         ]))
         .title_alignment(Alignment::Center);
     frame.render_widget(outer, area);
@@ -158,7 +161,7 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
     let refreshed = app
         .snapshot
         .as_ref()
-        .map(|s| relative_refresh(s))
+        .map(relative_refresh)
         .unwrap_or_else(|| "no snapshot".into());
 
     let codex_pct = app
@@ -191,9 +194,7 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
             Span::styled("codex ", Style::default().fg(OVERLAY0)),
             Span::styled(
                 codex_pct,
-                Style::default()
-                    .fg(MAUVE)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
             ),
             Span::styled("   claude ", Style::default().fg(OVERLAY0)),
             Span::styled(
@@ -221,12 +222,7 @@ fn render_providers(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
     render_provider_panel(frame, cols[2], app, true);
 }
 
-fn render_provider_panel(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    app: &App,
-    is_claude: bool,
-) {
+fn render_provider_panel(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App, is_claude: bool) {
     let (title, accent) = if is_claude {
         ("CLAUDE", BLUE)
     } else {
@@ -257,9 +253,7 @@ fn render_provider_panel(
             Span::raw(" "),
             Span::styled(
                 title,
-                Style::default()
-                    .fg(accent)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(accent).add_modifier(Modifier::BOLD),
             ),
             Span::styled(plan_suffix, Style::default().fg(OVERLAY0)),
             Span::raw(" "),
@@ -291,7 +285,7 @@ fn render_provider_panel(
                 .as_ref()
                 .and_then(|s| s.codex.as_ref())
                 .and_then(|c| c.error.as_deref())
-                .or_else(|| app.read_error.as_deref())
+                .or(app.read_error.as_deref())
                 .unwrap_or("waiting for snapshot")
         };
         frame.render_widget(
@@ -345,9 +339,7 @@ fn render_usage_row(frame: &mut ratatui::Frame<'_>, area: Rect, row: &UsageRow) 
     frame.render_widget(
         Paragraph::new(Span::styled(
             row.label.as_str(),
-            Style::default()
-                .fg(TEXT)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         )),
         label_cols[0],
     );
@@ -365,11 +357,7 @@ fn render_usage_row(frame: &mut ratatui::Frame<'_>, area: Rect, row: &UsageRow) 
     // Gauge bar
     let ratio = (row.pct / 100.0).clamp(0.0, 1.0);
     let gauge = Gauge::default()
-        .gauge_style(
-            Style::default()
-                .fg(color_for_pct(row.pct))
-                .bg(SURFACE0),
-        )
+        .gauge_style(Style::default().fg(color_for_pct(row.pct)).bg(SURFACE0))
         .ratio(ratio)
         .label("");
     frame.render_widget(gauge, chunks[1]);
@@ -442,10 +430,10 @@ fn codex_rows(app: &App) -> Vec<UsageRow> {
             },
         });
     }
-    if rows.is_empty() {
-        if let Some(e) = &codex.error {
-            rows.push(error_row(e));
-        }
+    if rows.is_empty()
+        && let Some(e) = &codex.error
+    {
+        rows.push(error_row(e));
     }
     rows
 }
@@ -502,10 +490,10 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
             reset: Some(format!("{pct:.0}% used")),
         });
     }
-    if rows.is_empty() {
-        if let Some(e) = &claude.error {
-            rows.push(error_row(e));
-        }
+    if rows.is_empty()
+        && let Some(e) = &claude.error
+    {
+        rows.push(error_row(e));
     }
     rows
 }
@@ -521,8 +509,7 @@ fn error_row(error: &str) -> UsageRow {
 
 fn render_rule(frame: &mut ratatui::Frame<'_>, area: Rect) {
     frame.render_widget(
-        Paragraph::new("─".repeat(area.width as usize))
-            .style(Style::default().fg(SURFACE0)),
+        Paragraph::new("─".repeat(area.width as usize)).style(Style::default().fg(SURFACE0)),
         area,
     );
 }
@@ -538,16 +525,12 @@ fn render_cost(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
             Span::styled("today  ", Style::default().fg(SUBTEXT0)),
             Span::styled(
                 format!("${today_cost:.2}"),
-                Style::default()
-                    .fg(TEXT)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             ),
             Span::styled("   ·   30 days  ", Style::default().fg(SUBTEXT0)),
             Span::styled(
                 format!("${:.2}", cost.total_usd),
-                Style::default()
-                    .fg(TEXT)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("   ·   {} models", cost.by_model.len()),

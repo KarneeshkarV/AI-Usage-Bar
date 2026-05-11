@@ -43,10 +43,10 @@ impl WaybarLine {
             state = state.combine(State::Auth);
         }
 
-        if cfg.display.show_cost {
-            if let Some(cost) = &snap.cost {
-                tooltip.push(format!("30d cost: ${:.2}", cost.total_usd));
-            }
+        if cfg.display.show_cost
+            && let Some(cost) = &snap.cost
+        {
+            tooltip.push(format!("30d cost: ${:.2}", cost.total_usd));
         }
 
         if snap.is_stale(std::time::Duration::from_secs(

@@ -28,6 +28,32 @@ Build the release binary:
 cargo build --release
 ```
 
+## Lint and Format
+
+Format the codebase:
+
+```bash
+cargo fmt --all
+```
+
+Check formatting without changing files:
+
+```bash
+cargo fmtcheck
+```
+
+Run Clippy with warnings treated as errors:
+
+```bash
+cargo lint
+```
+
+Run the test suite:
+
+```bash
+cargo ci
+```
+
 Run it from the repository:
 
 ```bash
