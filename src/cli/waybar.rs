@@ -23,10 +23,8 @@ pub async fn run() -> Result<()> {
         let mut snap = Snapshot::new();
 
         // Provider polling (independent, parallel)
-        let (codex_res, claude_res) = tokio::join!(
-            codex_client.refresh(),
-            claude_client.refresh(),
-        );
+        let (codex_res, claude_res) =
+            tokio::join!(codex_client.refresh(), claude_client.refresh(),);
         snap.codex = codex_res.unwrap_or_else(|e| {
             tracing::warn!(error = %e, "codex refresh failed");
             None

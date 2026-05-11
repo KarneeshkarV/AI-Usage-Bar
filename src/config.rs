@@ -43,7 +43,10 @@ pub struct CodexProviderConfig {
 
 impl Default for CodexProviderConfig {
     fn default() -> Self {
-        Self { enabled: true, binary: None }
+        Self {
+            enabled: true,
+            binary: None,
+        }
     }
 }
 
@@ -101,10 +104,8 @@ impl Config {
         if !p.exists() {
             return Ok(Self::default());
         }
-        let raw = std::fs::read_to_string(&p)
-            .with_context(|| format!("read {}", p.display()))?;
-        let cfg: Config = toml::from_str(&raw)
-            .with_context(|| format!("parse {}", p.display()))?;
+        let raw = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
+        let cfg: Config = toml::from_str(&raw).with_context(|| format!("parse {}", p.display()))?;
         Ok(cfg)
     }
 }

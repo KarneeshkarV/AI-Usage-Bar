@@ -52,8 +52,8 @@ fn from_file() -> Result<OAuthMeta> {
 }
 
 fn parse_creds_blob(raw: &str, path: &PathBuf) -> Result<OAuthMeta> {
-    let creds: StoredCreds = serde_json::from_str(raw)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let creds: StoredCreds =
+        serde_json::from_str(raw).with_context(|| format!("parse {}", path.display()))?;
     let token = creds.id_token.or(creds.access_token).context("no token")?;
     decode_id_token(&token)
 }
@@ -64,10 +64,16 @@ async fn from_secret_service() -> Result<OAuthMeta> {
         .context("secret service connect")?;
     let collection = ss.get_default_collection().await?;
     let items = collection
-        .search_items(vec![("service", "Claude Code-credentials")].into_iter().collect())
+        .search_items(
+            vec![("service", "Claude Code-credentials")]
+                .into_iter()
+                .collect(),
+        )
         .await
         .context("secret-service search")?;
-    let item = items.first().context("no Claude Code-credentials in secret service")?;
+    let item = items
+        .first()
+        .context("no Claude Code-credentials in secret service")?;
     let secret = item.get_secret().await?;
     let blob = String::from_utf8_lossy(&secret).to_string();
     parse_creds_blob(&blob, &PathBuf::from("(secret-service)"))
@@ -76,8 +82,7 @@ async fn from_secret_service() -> Result<OAuthMeta> {
 fn decode_id_token(token: &str) -> Result<OAuthMeta> {
     let mid = token.split('.').nth(1).context("malformed jwt")?;
     let bytes = URL_SAFE_NO_PAD.decode(mid).context("base64 decode")?;
-    let claims: IdTokenClaims =
-        serde_json::from_slice(&bytes).context("parse id_token claims")?;
+    let claims: IdTokenClaims = serde_json::from_slice(&bytes).context("parse id_token claims")?;
     Ok(OAuthMeta {
         email: claims.email,
         plan: claims.plan_type,

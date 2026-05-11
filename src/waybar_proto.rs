@@ -49,7 +49,9 @@ impl WaybarLine {
             }
         }
 
-        if snap.is_stale(std::time::Duration::from_secs(cfg.refresh.interval_secs * 3)) {
+        if snap.is_stale(std::time::Duration::from_secs(
+            cfg.refresh.interval_secs * 3,
+        )) {
             state = state.combine(State::Stale);
         }
 
@@ -110,6 +112,10 @@ impl State {
                 State::Crit => 4,
             }
         }
-        if rank(other) > rank(self) { other } else { self }
+        if rank(other) > rank(self) {
+            other
+        } else {
+            self
+        }
     }
 }

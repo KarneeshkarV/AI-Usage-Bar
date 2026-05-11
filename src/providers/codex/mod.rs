@@ -36,7 +36,11 @@ pub struct Credits {
 impl CodexSnapshot {
     pub fn worst_percent(&self) -> Option<u8> {
         let p = self.primary.as_ref().map(|w| w.used_percent).unwrap_or(0.0);
-        let s = self.secondary.as_ref().map(|w| w.used_percent).unwrap_or(0.0);
+        let s = self
+            .secondary
+            .as_ref()
+            .map(|w| w.used_percent)
+            .unwrap_or(0.0);
         let pct = p.max(s).round().clamp(0.0, 100.0) as u8;
         if self.primary.is_some() || self.secondary.is_some() {
             Some(pct)
@@ -76,7 +80,10 @@ impl CodexSnapshot {
             && c.has_credits
         {
             let bal = c.balance.clone().unwrap_or_else(|| "—".into());
-            out.push(format!("  credits: {bal}{}", if c.unlimited { " (unlimited)" } else { "" }));
+            out.push(format!(
+                "  credits: {bal}{}",
+                if c.unlimited { " (unlimited)" } else { "" }
+            ));
         }
         if let Some(e) = &self.error {
             out.push(format!("  error: {e}"));

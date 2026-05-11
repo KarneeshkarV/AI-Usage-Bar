@@ -63,7 +63,11 @@ impl PtySession {
             }
         });
 
-        Ok(Self { pair, writer, reader_buf: buf })
+        Ok(Self {
+            pair,
+            writer,
+            reader_buf: buf,
+        })
     }
 
     pub async fn probe_usage(&mut self) -> Result<UsageData> {
@@ -130,12 +134,10 @@ fn strip_ansi(s: &str) -> String {
 fn parse_panel(text: &str) -> Result<UsageData> {
     static SESSION_RE: OnceLock<Regex> = OnceLock::new();
     static WEEKLY_RE: OnceLock<Regex> = OnceLock::new();
-    let session_re = SESSION_RE.get_or_init(|| {
-        Regex::new(r"(?i)session limit[^0-9]*([\d.]+)%").unwrap()
-    });
-    let weekly_re = WEEKLY_RE.get_or_init(|| {
-        Regex::new(r"(?i)weekly limit[^0-9]*([\d.]+)%").unwrap()
-    });
+    let session_re =
+        SESSION_RE.get_or_init(|| Regex::new(r"(?i)session limit[^0-9]*([\d.]+)%").unwrap());
+    let weekly_re =
+        WEEKLY_RE.get_or_init(|| Regex::new(r"(?i)weekly limit[^0-9]*([\d.]+)%").unwrap());
 
     let session = capture_window(text, session_re);
     let weekly = capture_window(text, weekly_re);
@@ -156,7 +158,10 @@ fn capture_window(text: &str, re: &Regex) -> Option<Window> {
     let after = &text[m.get(0)?.end()..];
     let slice = &after[..after.len().min(240)];
     let resets_at = parse_reset_time(slice);
-    Some(Window { used_percent: pct, resets_at })
+    Some(Window {
+        used_percent: pct,
+        resets_at,
+    })
 }
 
 fn parse_reset_time(slice: &str) -> Option<chrono::DateTime<Utc>> {
@@ -171,11 +176,24 @@ fn parse_reset_time(slice: &str) -> Option<chrono::DateTime<Utc>> {
     let (day, mon) = if let (Some(d), Some(mo)) = (cap.get(3), cap.get(4)) {
         (d.as_str().parse::<u32>().ok()?, mo.as_str().to_string())
     } else {
-        (cap.get(6)?.as_str().parse::<u32>().ok()?, cap.get(5)?.as_str().to_string())
+        (
+            cap.get(6)?.as_str().parse::<u32>().ok()?,
+            cap.get(5)?.as_str().to_string(),
+        )
     };
     let month_num = match mon.to_lowercase().as_str() {
-        "jan" => 1, "feb" => 2, "mar" => 3, "apr" => 4, "may" => 5, "jun" => 6,
-        "jul" => 7, "aug" => 8, "sep" => 9, "oct" => 10, "nov" => 11, "dec" => 12,
+        "jan" => 1,
+        "feb" => 2,
+        "mar" => 3,
+        "apr" => 4,
+        "may" => 5,
+        "jun" => 6,
+        "jul" => 7,
+        "aug" => 8,
+        "sep" => 9,
+        "oct" => 10,
+        "nov" => 11,
+        "dec" => 12,
         _ => return None,
     };
     let now = Local::now();

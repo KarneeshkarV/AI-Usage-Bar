@@ -37,12 +37,7 @@ pub fn scan_dir(root: &Path, acc: &mut ReportAcc, pricing: &PricingTable) -> Res
         .into_iter()
         .filter_map(|r| r.ok())
         .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map(|x| x == "jsonl")
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().extension().map(|x| x == "jsonl").unwrap_or(false))
     {
         if let Err(e) = scan_file(entry.path(), acc, pricing, &mut seen_keys) {
             tracing::trace!(file=%entry.path().display(), error=%e, "skip");
@@ -114,10 +109,12 @@ fn scan_file(
             usd = (n as f64) / 1_000_000_000.0;
         } else {
             // Fall back to pricing × token counts from `usage`.
-            let usage = parsed
-                .usage
-                .clone()
-                .or_else(|| parsed.message.as_ref().and_then(|m| m.get("usage").cloned()));
+            let usage = parsed.usage.clone().or_else(|| {
+                parsed
+                    .message
+                    .as_ref()
+                    .and_then(|m| m.get("usage").cloned())
+            });
             if let (Some(usage), Some(price)) = (usage, pricing.get(&model)) {
                 let input = json_u64(&usage, &["input_tokens", "input"]);
                 let cache_read = json_u64(&usage, &["cache_read_input_tokens", "cacheRead"]);

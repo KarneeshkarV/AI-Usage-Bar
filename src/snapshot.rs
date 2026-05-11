@@ -39,8 +39,8 @@ pub fn write(snap: &Snapshot) -> Result<()> {
     let path = snapshot_path()?;
     let tmp = path.with_extension("json.tmp");
     {
-        let mut f = std::fs::File::create(&tmp)
-            .with_context(|| format!("create {}", tmp.display()))?;
+        let mut f =
+            std::fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
         let json = serde_json::to_vec(snap)?;
         f.write_all(&json)?;
         f.sync_all().ok();
@@ -52,8 +52,7 @@ pub fn write(snap: &Snapshot) -> Result<()> {
 
 pub fn read() -> Result<Snapshot> {
     let path = snapshot_path()?;
-    let raw = std::fs::read(&path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let raw = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
     let snap = serde_json::from_slice(&raw)?;
     Ok(snap)
 }

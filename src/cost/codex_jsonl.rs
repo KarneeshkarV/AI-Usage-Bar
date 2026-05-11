@@ -40,12 +40,7 @@ pub fn scan_dir(root: &Path, acc: &mut ReportAcc, pricing: &PricingTable) -> Res
         .into_iter()
         .filter_map(|r| r.ok())
         .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map(|x| x == "jsonl")
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().extension().map(|x| x == "jsonl").unwrap_or(false))
     {
         let path = entry.path();
         if let Err(e) = scan_file(path, acc, pricing, &mut sessions) {
@@ -93,11 +88,7 @@ fn scan_file(
                     let fork_ts = parsed
                         .timestamp
                         .as_deref()
-                        .or_else(|| {
-                            payload
-                                .get("timestamp")
-                                .and_then(|v| v.as_str())
-                        })
+                        .or_else(|| payload.get("timestamp").and_then(|v| v.as_str()))
                         .and_then(parse_ts);
                     let st = sessions.entry(sid.clone()).or_default();
                     st.parent_id = parent;
@@ -110,7 +101,8 @@ fn scan_file(
 
         // turn_context: pick up the model name
         if parsed.kind.as_deref() == Some("turn_context") {
-            if let (Some(sid), Some(payload)) = (current_session.as_ref(), parsed.payload.as_ref()) {
+            if let (Some(sid), Some(payload)) = (current_session.as_ref(), parsed.payload.as_ref())
+            {
                 let model = payload
                     .get("model")
                     .and_then(|v| v.as_str())
@@ -151,7 +143,9 @@ fn scan_file(
                 None => continue,
             };
             let ts = parsed.timestamp.as_deref().and_then(parse_ts);
-            let day = ts.map(|t| t.date_naive()).unwrap_or_else(|| Utc::now().date_naive());
+            let day = ts
+                .map(|t| t.date_naive())
+                .unwrap_or_else(|| Utc::now().date_naive());
 
             let st = sessions.entry(sid.clone()).or_default();
             let model = parsed
@@ -196,7 +190,8 @@ fn scan_file(
             let billable_input = di.saturating_sub(dc) as f64;
             let cached = dc as f64;
             let out = do_ as f64;
-            let usd = billable_input * price.input + cached * price.cached_input + out * price.output;
+            let usd =
+                billable_input * price.input + cached * price.cached_input + out * price.output;
             acc.add("codex", day, &model, usd);
         }
     }

@@ -39,20 +39,104 @@ impl PricingTable {
 const FALLBACK: &[(&str, ModelPrice)] = &[
     // Per-token prices in USD (1e-6 per 1M tokens).
     // GPT-5 / Codex
-    ("gpt-5", ModelPrice { input: 1.25e-6, cached_input: 0.125e-6, output: 10.0e-6 }),
-    ("gpt-5-codex", ModelPrice { input: 1.25e-6, cached_input: 0.125e-6, output: 10.0e-6 }),
-    ("gpt-5-mini", ModelPrice { input: 0.25e-6, cached_input: 0.025e-6, output: 2.0e-6 }),
-    ("gpt-4o", ModelPrice { input: 2.5e-6, cached_input: 1.25e-6, output: 10.0e-6 }),
-    ("gpt-4o-mini", ModelPrice { input: 0.15e-6, cached_input: 0.075e-6, output: 0.6e-6 }),
-    ("o1", ModelPrice { input: 15.0e-6, cached_input: 7.5e-6, output: 60.0e-6 }),
-    ("o3-mini", ModelPrice { input: 1.1e-6, cached_input: 0.55e-6, output: 4.4e-6 }),
+    (
+        "gpt-5",
+        ModelPrice {
+            input: 1.25e-6,
+            cached_input: 0.125e-6,
+            output: 10.0e-6,
+        },
+    ),
+    (
+        "gpt-5-codex",
+        ModelPrice {
+            input: 1.25e-6,
+            cached_input: 0.125e-6,
+            output: 10.0e-6,
+        },
+    ),
+    (
+        "gpt-5-mini",
+        ModelPrice {
+            input: 0.25e-6,
+            cached_input: 0.025e-6,
+            output: 2.0e-6,
+        },
+    ),
+    (
+        "gpt-4o",
+        ModelPrice {
+            input: 2.5e-6,
+            cached_input: 1.25e-6,
+            output: 10.0e-6,
+        },
+    ),
+    (
+        "gpt-4o-mini",
+        ModelPrice {
+            input: 0.15e-6,
+            cached_input: 0.075e-6,
+            output: 0.6e-6,
+        },
+    ),
+    (
+        "o1",
+        ModelPrice {
+            input: 15.0e-6,
+            cached_input: 7.5e-6,
+            output: 60.0e-6,
+        },
+    ),
+    (
+        "o3-mini",
+        ModelPrice {
+            input: 1.1e-6,
+            cached_input: 0.55e-6,
+            output: 4.4e-6,
+        },
+    ),
     // Claude (Anthropic) — note: Claude JSONL carries pre-computed cost, so these
     // only act as a fallback if costNanos is missing.
-    ("claude-opus-4", ModelPrice { input: 15.0e-6, cached_input: 1.5e-6, output: 75.0e-6 }),
-    ("claude-sonnet-4", ModelPrice { input: 3.0e-6, cached_input: 0.3e-6, output: 15.0e-6 }),
-    ("claude-haiku-4", ModelPrice { input: 0.8e-6, cached_input: 0.08e-6, output: 4.0e-6 }),
-    ("claude-3-5-sonnet", ModelPrice { input: 3.0e-6, cached_input: 0.3e-6, output: 15.0e-6 }),
-    ("claude-3-5-haiku", ModelPrice { input: 0.8e-6, cached_input: 0.08e-6, output: 4.0e-6 }),
+    (
+        "claude-opus-4",
+        ModelPrice {
+            input: 15.0e-6,
+            cached_input: 1.5e-6,
+            output: 75.0e-6,
+        },
+    ),
+    (
+        "claude-sonnet-4",
+        ModelPrice {
+            input: 3.0e-6,
+            cached_input: 0.3e-6,
+            output: 15.0e-6,
+        },
+    ),
+    (
+        "claude-haiku-4",
+        ModelPrice {
+            input: 0.8e-6,
+            cached_input: 0.08e-6,
+            output: 4.0e-6,
+        },
+    ),
+    (
+        "claude-3-5-sonnet",
+        ModelPrice {
+            input: 3.0e-6,
+            cached_input: 0.3e-6,
+            output: 15.0e-6,
+        },
+    ),
+    (
+        "claude-3-5-haiku",
+        ModelPrice {
+            input: 0.8e-6,
+            cached_input: 0.08e-6,
+            output: 4.0e-6,
+        },
+    ),
 ];
 
 pub async fn load_pricing() -> Result<PricingTable> {
@@ -127,7 +211,13 @@ async fn fetch_models_dev() -> Result<PricingTable> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()?;
-    let v: serde_json::Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let v: serde_json::Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     let mut models = HashMap::new();
     // The schema: top-level object keyed by provider id; each has `models` map.
     if let Some(obj) = v.as_object() {
@@ -137,8 +227,10 @@ async fn fetch_models_dev() -> Result<PricingTable> {
                     if let Some(cost) = mv.get("cost") {
                         // models.dev quotes prices "per 1M tokens", USD.
                         let input = cost.get("input").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                        let cached_input =
-                            cost.get("cache_read").and_then(|x| x.as_f64()).unwrap_or(input / 10.0);
+                        let cached_input = cost
+                            .get("cache_read")
+                            .and_then(|x| x.as_f64())
+                            .unwrap_or(input / 10.0);
                         let output = cost.get("output").and_then(|x| x.as_f64()).unwrap_or(0.0);
                         if input == 0.0 && output == 0.0 {
                             continue;
@@ -159,5 +251,8 @@ async fn fetch_models_dev() -> Result<PricingTable> {
     if models.is_empty() {
         anyhow::bail!("models.dev returned no usable entries");
     }
-    Ok(PricingTable { models, source: "models.dev".into() })
+    Ok(PricingTable {
+        models,
+        source: "models.dev".into(),
+    })
 }

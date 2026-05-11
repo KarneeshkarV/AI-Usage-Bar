@@ -49,7 +49,9 @@ pub async fn find_session_key() -> Result<SessionKey> {
 
         for profile in enumerate_profiles(&base) {
             let cookies_db = locate_cookies_file(&profile);
-            let Some(cookies_db) = cookies_db else { continue };
+            let Some(cookies_db) = cookies_db else {
+                continue;
+            };
             match read_session_key(&cookies_db, &key) {
                 Ok(Some(plaintext)) => {
                     return Ok(SessionKey {
@@ -130,7 +132,10 @@ fn enumerate_profiles(base: &Path) -> Vec<PathBuf> {
 
 fn locate_cookies_file(profile: &Path) -> Option<PathBuf> {
     // Newer Chromium puts it under Network/Cookies; older versions used Cookies directly.
-    for candidate in [profile.join("Network").join("Cookies"), profile.join("Cookies")] {
+    for candidate in [
+        profile.join("Network").join("Cookies"),
+        profile.join("Cookies"),
+    ] {
         if candidate.is_file() {
             return Some(candidate);
         }
@@ -150,7 +155,10 @@ async fn derive_key_via_secret_service(app_names: &[&str]) -> Result<[u8; KEY_LE
             return Ok(derive_key_from_password(&secret));
         }
     }
-    Err(anyhow!("libsecret entry not found for any of: {:?}", app_names))
+    Err(anyhow!(
+        "libsecret entry not found for any of: {:?}",
+        app_names
+    ))
 }
 
 fn derive_key_from_password(password: &[u8]) -> [u8; KEY_LEN] {

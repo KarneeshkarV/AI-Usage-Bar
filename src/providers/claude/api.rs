@@ -72,7 +72,10 @@ async fn get<T: for<'de> Deserialize<'de>>(
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        return Err(anyhow!("{status} from {url}: {}", body.chars().take(200).collect::<String>()));
+        return Err(anyhow!(
+            "{status} from {url}: {}",
+            body.chars().take(200).collect::<String>()
+        ));
     }
     Ok(resp.json::<T>().await?)
 }

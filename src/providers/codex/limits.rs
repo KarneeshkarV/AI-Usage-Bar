@@ -21,7 +21,9 @@ pub async fn fetch(rpc: &mut RpcClient) -> Result<CodexSnapshot> {
             let acct = a.get("account").cloned().unwrap_or(Value::Null);
             (
                 acct.get("email").and_then(|v| v.as_str()).map(String::from),
-                acct.get("planType").and_then(|v| v.as_str()).map(String::from),
+                acct.get("planType")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
             )
         })
         .unwrap_or((None, None));
@@ -44,14 +46,16 @@ pub async fn fetch(rpc: &mut RpcClient) -> Result<CodexSnapshot> {
 fn parse_window(v: Option<&Value>) -> Option<Window> {
     let v = v?;
     let used = v.get("usedPercent").and_then(|x| x.as_f64())?;
-    let mins = v.get("windowDurationMins").and_then(|x| x.as_u64()).map(|x| x as u32);
-    let resets = v
-        .get("resetsAt")
-        .and_then(|x| x.as_i64())
-        .and_then(|secs| match Utc.timestamp_opt(secs, 0) {
+    let mins = v
+        .get("windowDurationMins")
+        .and_then(|x| x.as_u64())
+        .map(|x| x as u32);
+    let resets = v.get("resetsAt").and_then(|x| x.as_i64()).and_then(|secs| {
+        match Utc.timestamp_opt(secs, 0) {
             chrono::LocalResult::Single(t) => Some(t),
             _ => None,
-        });
+        }
+    });
     let _: Option<DateTime<Utc>> = resets;
     Some(Window {
         used_percent: used,
@@ -63,8 +67,14 @@ fn parse_window(v: Option<&Value>) -> Option<Window> {
 fn parse_credits(v: Option<&Value>) -> Option<Credits> {
     let v = v?;
     Some(Credits {
-        has_credits: v.get("hasCredits").and_then(|x| x.as_bool()).unwrap_or(false),
-        unlimited: v.get("unlimited").and_then(|x| x.as_bool()).unwrap_or(false),
+        has_credits: v
+            .get("hasCredits")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false),
+        unlimited: v
+            .get("unlimited")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false),
         balance: v.get("balance").and_then(|x| x.as_str()).map(String::from),
     })
 }

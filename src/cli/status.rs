@@ -26,10 +26,7 @@ async fn one_shot() -> Result<Snapshot> {
     let mut codex_client = codex::Client::new(cfg.providers.codex.clone());
     let mut claude_client = claude::Client::new(cfg.providers.claude.clone());
 
-    let (codex_res, claude_res) = tokio::join!(
-        codex_client.refresh(),
-        claude_client.refresh(),
-    );
+    let (codex_res, claude_res) = tokio::join!(codex_client.refresh(), claude_client.refresh(),);
     snap.codex = codex_res.ok().flatten();
     snap.claude = claude_res.ok().flatten();
     snap.cost = crate::cost::scan_both().await.ok();
