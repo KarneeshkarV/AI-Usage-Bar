@@ -1,6 +1,6 @@
-# ai_bar
+# AI Usage Bar
 
-`ai_bar` is a small Rust CLI that reports AI coding usage for Codex and Claude.
+AI Usage Bar is a small Rust CLI that reports AI coding usage for Codex and Claude.
 It can run as a Waybar module, show a terminal dashboard, print status snapshots,
 and scan local session logs for recent cost.
 
@@ -57,51 +57,51 @@ cargo ci
 Run it from the repository:
 
 ```bash
-target/release/ai_bar status --detailed
+target/release/ai-usage-bar status --detailed
 ```
 
 Or install/copy the binary somewhere on your `PATH` and run:
 
 ```bash
-ai_bar status --detailed
+ai-usage-bar status --detailed
 ```
 
 ## Commands
 
 ```bash
-ai_bar waybar
+ai-usage-bar waybar
 ```
 
 Runs continuously, polls providers, writes a cached snapshot, and emits Waybar
 JSON to stdout.
 
 ```bash
-ai_bar status
-ai_bar status --detailed
+ai-usage-bar status
+ai-usage-bar status --detailed
 ```
 
 Prints a terminal status snapshot. It uses the cached Waybar snapshot when it is
 fresh and falls back to a one-shot provider poll.
 
 ```bash
-ai_bar tui
-ai_bar tui --poll-secs 5
+ai-usage-bar tui
+ai-usage-bar tui --poll-secs 5
 ```
 
 Opens the terminal dashboard. It polls the local cached snapshot while open.
 
 ```bash
-ai_bar cost
-ai_bar cost --provider codex
-ai_bar cost --provider claude
+ai-usage-bar cost
+ai-usage-bar cost --provider codex
+ai-usage-bar cost --provider claude
 ```
 
 Scans local session logs and prints a 30-day cost report.
 
 ```bash
-ai_bar config
-ai_bar config --print
-ai_bar config --print-waybar-snippet
+ai-usage-bar config
+ai-usage-bar config --print
+ai-usage-bar config --print-waybar-snippet
 ```
 
 Shows the config path, prints resolved config values, or prints Waybar
@@ -112,7 +112,7 @@ integration snippets.
 The config file lives at:
 
 ```bash
-~/.config/ai_bar/config.toml
+~/.config/ai-usage-bar/config.toml
 ```
 
 If the file does not exist, defaults are used.
@@ -143,7 +143,7 @@ crit_threshold = 90
 The cached snapshot is written under the XDG cache directory:
 
 ```bash
-~/.cache/ai_bar/snapshot.json
+~/.cache/ai-usage-bar/snapshot.json
 ```
 
 ## Waybar and Omarchy
@@ -153,15 +153,15 @@ For Omarchy-specific setup, see [OMARCHY.md](OMARCHY.md).
 Minimal Waybar module:
 
 ```jsonc
-"custom/ai_bar": {
-  "exec": "/absolute/path/to/ai_bar waybar",
+"custom/ai-usage-bar": {
+  "exec": "/absolute/path/to/ai-usage-bar waybar",
   "return-type": "json",
-  "on-click": "omarchy-launch-floating-terminal-with-presentation /absolute/path/to/ai_bar tui",
+  "on-click": "omarchy-launch-floating-terminal-with-presentation /absolute/path/to/ai-usage-bar tui",
   "tooltip": true
 }
 ```
 
-Add `custom/ai_bar` to the appropriate Waybar module list, then restart Waybar:
+Add `custom/ai-usage-bar` to the appropriate Waybar module list, then restart Waybar:
 
 ```bash
 omarchy-restart-waybar
@@ -172,7 +172,7 @@ omarchy-restart-waybar
 Run a detailed status check first:
 
 ```bash
-ai_bar status --detailed
+ai-usage-bar status --detailed
 ```
 
 Common causes of missing data:
@@ -185,5 +185,5 @@ Common causes of missing data:
 Regenerate the Waybar snippet after moving the binary:
 
 ```bash
-ai_bar config --print-waybar-snippet
+ai-usage-bar config --print-waybar-snippet
 ```

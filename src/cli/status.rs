@@ -5,7 +5,7 @@ use crate::providers::{claude, codex};
 use crate::snapshot::{self, Snapshot};
 
 pub async fn run(detailed: bool) -> Result<()> {
-    // Prefer the cached snapshot written by `ai_bar waybar`. Fall back to a
+    // Prefer the cached snapshot written by `ai-usage-bar waybar`. Fall back to a
     // synchronous one-shot poll if no daemon has written one yet.
     let snap = match snapshot::read() {
         Ok(s) if !s.is_stale(std::time::Duration::from_secs(30 * 60)) => s,
@@ -35,7 +35,7 @@ async fn one_shot() -> Result<Snapshot> {
 }
 
 fn print_compact(snap: &Snapshot) {
-    println!("ai_bar — {}", snap.refreshed_at.to_rfc3339());
+    println!("AI Usage Bar — {}", snap.refreshed_at.to_rfc3339());
     if let Some(c) = &snap.codex {
         println!("codex: {}", c.summary_line());
     } else {
@@ -52,7 +52,7 @@ fn print_compact(snap: &Snapshot) {
 }
 
 fn print_detailed(snap: &Snapshot) {
-    println!("╭─ ai_bar — usage snapshot");
+    println!("╭─ AI Usage Bar — usage snapshot");
     println!("│  refreshed: {}", snap.refreshed_at.to_rfc3339());
     println!("├─ Codex");
     if let Some(c) = &snap.codex {

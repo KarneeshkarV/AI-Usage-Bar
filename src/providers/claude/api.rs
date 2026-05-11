@@ -13,7 +13,7 @@ const BASE: &str = "https://claude.ai/api";
 pub async fn fetch(session_key: &str) -> Result<ClaudeData> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
-        .user_agent("ai_bar/0.1 (+https://github.com/karneeshkar/ai_bar)")
+        .user_agent("ai-usage-bar/0.1 (+https://github.com/KarneeshkarV/AI-Usage-Bar)")
         .build()?;
 
     // 1. Account → email + plan tier from the first membership.

@@ -167,7 +167,7 @@ fn derive_key_from_password(password: &[u8]) -> [u8; KEY_LEN] {
 
 fn read_session_key(db_path: &Path, key: &[u8; KEY_LEN]) -> Result<Option<String>> {
     // Browser may hold an exclusive lock. Copy to a tmpfile so we can read.
-    let tmp = std::env::temp_dir().join(format!("ai_bar-cookies-{}.db", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("ai-usage-bar-cookies-{}.db", std::process::id()));
     std::fs::copy(db_path, &tmp)?;
     let _cleanup = TmpFile(tmp.clone());
 

@@ -41,7 +41,7 @@ pub async fn run() -> Result<()> {
         snap.cost = last_cost.clone();
         snap.refreshed_at = chrono::Utc::now();
 
-        // Atomic snapshot write so `ai_bar status` can read it
+        // Atomic snapshot write so `ai-usage-bar status` can read it
         if let Err(e) = snapshot::write(&snap) {
             tracing::warn!(error = %e, "snapshot write failed");
         }

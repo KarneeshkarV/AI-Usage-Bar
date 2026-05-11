@@ -88,12 +88,12 @@ impl Default for DisplayConfig {
 
 pub fn config_path() -> Result<PathBuf> {
     let base = dirs::config_dir().context("no XDG config dir")?;
-    Ok(base.join("ai_bar").join("config.toml"))
+    Ok(base.join("ai-usage-bar").join("config.toml"))
 }
 
 pub fn cache_dir() -> Result<PathBuf> {
     let base = dirs::cache_dir().context("no XDG cache dir")?;
-    let dir = base.join("ai_bar");
+    let dir = base.join("ai-usage-bar");
     std::fs::create_dir_all(&dir).ok();
     Ok(dir)
 }

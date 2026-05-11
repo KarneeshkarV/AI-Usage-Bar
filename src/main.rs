@@ -12,9 +12,9 @@ mod waybar_proto;
 
 #[derive(Parser)]
 #[command(
-    name = "ai_bar",
+    name = "ai-usage-bar",
     version,
-    about = "AI coding usage limits in your Waybar"
+    about = "AI Usage Bar: AI coding usage limits in your Waybar"
 )]
 struct Cli {
     #[command(subcommand)]

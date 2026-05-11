@@ -74,7 +74,7 @@ impl RpcClient {
         let init = client
             .call(
                 "initialize",
-                json!({ "clientInfo": { "name": "ai_bar", "version": env!("CARGO_PKG_VERSION") } }),
+                json!({ "clientInfo": { "name": "ai-usage-bar", "version": env!("CARGO_PKG_VERSION") } }),
                 Duration::from_secs(8),
             )
             .await?;
