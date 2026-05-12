@@ -446,6 +446,10 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
         return Vec::new();
     };
 
+    if !claude.accounts.is_empty() {
+        return claude.accounts.iter().map(account_row).collect();
+    }
+
     let mut rows = Vec::new();
     if let Some(w) = &claude.session {
         rows.push(UsageRow {
@@ -496,6 +500,53 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
         rows.push(error_row(e));
     }
     rows
+}
+
+fn account_row(account: &crate::providers::claude::AccountUsage) -> UsageRow {
+    let label = if account.is_active {
+        format!("● {}", account.label)
+    } else {
+        format!("  {}", account.label)
+    };
+    let session_pct = account
+        .session
+        .as_ref()
+        .map(|w| w.used_percent)
+        .unwrap_or(0.0);
+
+    let detail = match &account.error {
+        Some(e) => e.chars().take(56).collect(),
+        None => {
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(w) = &account.session {
+                parts.push(format!("session {:.0}%", w.used_percent));
+            }
+            if let Some(w) = &account.weekly {
+                parts.push(format!("weekly {:.0}%", w.used_percent));
+            }
+            if let Some(w) = &account.sonnet_weekly {
+                parts.push(format!("sonnet {:.0}%", w.used_percent));
+            }
+            if parts.is_empty() {
+                "no data".into()
+            } else {
+                parts.join(" · ")
+            }
+        }
+    };
+
+    let reset = account
+        .session
+        .as_ref()
+        .and_then(|w| w.resets_at)
+        .map(|t| format!("resets in {}", until(t)));
+
+    UsageRow {
+        label,
+        pct: session_pct,
+        detail,
+        reset,
+    }
 }
 
 fn error_row(error: &str) -> UsageRow {

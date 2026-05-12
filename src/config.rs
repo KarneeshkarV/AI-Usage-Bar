@@ -55,6 +55,8 @@ pub struct ClaudeProviderConfig {
     pub enabled: bool,
     pub binary: Option<String>,
     pub prefer: Vec<String>,
+    #[serde(default)]
+    pub accounts_paths: Option<Vec<PathBuf>>,
 }
 
 impl Default for ClaudeProviderConfig {
@@ -62,7 +64,8 @@ impl Default for ClaudeProviderConfig {
         Self {
             enabled: true,
             binary: None,
-            prefer: vec!["cookies".into(), "pty".into()],
+            prefer: vec!["oauth_usage".into(), "cookies".into(), "pty".into()],
+            accounts_paths: None,
         }
     }
 }
