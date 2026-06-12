@@ -20,6 +20,7 @@ pub async fn run() -> Result<()> {
     let mut last_cost: Option<cost::CostReport> = None;
     let mut last_ping_claude: Option<DateTime<Utc>> = None;
     let mut last_ping_codex: Option<DateTime<Utc>> = None;
+    let mut prev_reset_claude: Option<DateTime<Utc>> = None;
 
     let stdout = std::io::stdout();
 
@@ -58,8 +59,9 @@ pub async fn run() -> Result<()> {
                 .and_then(|c| c.session.as_ref())
                 .and_then(|w| w.resets_at);
             if let Some(reset) = claude_reset {
-                maybe_ping_claude(&cfg, reset, &mut last_ping_claude);
+                maybe_ping_claude(&cfg, reset, prev_reset_claude, &mut last_ping_claude);
             }
+            prev_reset_claude = claude_reset;
 
             let codex_reset = snap
                 .codex
@@ -67,7 +69,7 @@ pub async fn run() -> Result<()> {
                 .and_then(|c| c.primary.as_ref())
                 .and_then(|w| w.resets_at);
             if let Some(reset) = codex_reset {
-                maybe_ping_codex(&cfg, reset, &mut last_ping_codex);
+                maybe_ping_codex(&cfg, reset, None, &mut last_ping_codex);
             }
         }
 
@@ -93,10 +95,38 @@ pub async fn run() -> Result<()> {
 /// window only once we are safely *over* the old limit (clock-skew buffer).
 const OVER_LIMIT_SECS: i64 = 10;
 
+/// A forward jump in `resets_at` of at least this many seconds means the old
+/// window reset slipped past between polls (a genuine ~5h window roll-over, not
+/// a few seconds of API jitter).
+const JUMP_MIN_SECS: i64 = 3600;
+
 /// Decide whether to anchor the window that resets at `reset`, returning how
-/// many seconds to wait before firing so the ping lands ~10s past the reset.
-/// Dedups on the reset timestamp; `None` means don't schedule it now.
-fn ping_delay(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc>>) -> Option<u64> {
+/// many seconds to wait before firing. `prev` is the `resets_at` seen on the
+/// previous poll. Dedups on the reset timestamp; `None` means don't fire now.
+fn ping_delay(
+    cfg: &Config,
+    reset: DateTime<Utc>,
+    prev: Option<DateTime<Utc>>,
+    last: &mut Option<DateTime<Utc>>,
+) -> Option<u64> {
+    // Fallback: `resets_at` jumped forward — the previous reset passed between
+    // polls and a new far-out window appeared before we could schedule it. If
+    // that old boundary was never anchored, fire immediately so the new window
+    // still gets its ping. Mark the missed boundary handled (not `reset`, so the
+    // new window is still anchored normally when it later reaches its own reset).
+    if let Some(prev) = prev {
+        let now = Utc::now();
+        if prev <= now
+            && reset > now
+            && reset - prev > chrono::Duration::seconds(JUMP_MIN_SECS)
+            && *last != Some(prev)
+        {
+            *last = Some(prev);
+            return Some(0);
+        }
+    }
+
+    // Normal path: schedule the ping ~10s past this reset.
     let fire_at = reset + chrono::Duration::seconds(OVER_LIMIT_SECS);
     let delay = fire_at.signed_duration_since(Utc::now()).num_seconds();
     // Eligible only within `threshold_secs` either side of the fire time: the
@@ -116,8 +146,13 @@ fn ping_delay(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc
 /// Schedule a single Claude ping ~10s after the session window resets, so the
 /// ping is the first activity of the fresh window and pins its start. Runs in
 /// the background so the Waybar loop never blocks on the LLM call.
-fn maybe_ping_claude(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc>>) {
-    let Some(delay) = ping_delay(cfg, reset, last) else {
+fn maybe_ping_claude(
+    cfg: &Config,
+    reset: DateTime<Utc>,
+    prev: Option<DateTime<Utc>>,
+    last: &mut Option<DateTime<Utc>>,
+) {
+    let Some(delay) = ping_delay(cfg, reset, prev, last) else {
         return;
     };
     let binary = cfg.providers.claude.binary.clone();
@@ -134,8 +169,13 @@ fn maybe_ping_claude(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateT
 }
 
 /// Codex counterpart to [`maybe_ping_claude`], keyed off the primary 5h window.
-fn maybe_ping_codex(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc>>) {
-    let Some(delay) = ping_delay(cfg, reset, last) else {
+fn maybe_ping_codex(
+    cfg: &Config,
+    reset: DateTime<Utc>,
+    prev: Option<DateTime<Utc>>,
+    last: &mut Option<DateTime<Utc>>,
+) {
+    let Some(delay) = ping_delay(cfg, reset, prev, last) else {
         return;
     };
     let binary = cfg.providers.codex.binary.clone();
