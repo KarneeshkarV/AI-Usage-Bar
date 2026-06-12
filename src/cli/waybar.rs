@@ -135,22 +135,18 @@ fn maybe_ping_claude(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateT
 
 /// Codex counterpart to [`maybe_ping_claude`], keyed off the primary 5h window.
 fn maybe_ping_codex(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc>>) {
-    let secs = reset.signed_duration_since(Utc::now()).num_seconds();
-    // Same post-reset anchoring as Claude; see `maybe_ping_claude`.
-    if !(-(cfg.ping.threshold_secs as i64)..=0).contains(&secs) {
+    let Some(delay) = ping_delay(cfg, reset, last) else {
         return;
-    }
-    if *last == Some(reset) {
-        return;
-    }
-    *last = Some(reset);
-
+    };
     let binary = cfg.providers.codex.binary.clone();
     let model = cfg.ping.codex_model.clone();
     let reasoning = cfg.ping.codex_reasoning.clone();
     tokio::spawn(async move {
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_secs(delay)).await;
+        }
         match ping::ping_codex(binary.as_deref(), &model, &reasoning).await {
-            Ok(()) => tracing::info!("codex pre-reset ping sent"),
+            Ok(()) => tracing::info!("codex post-reset ping sent"),
             Err(e) => tracing::warn!(error = %e, "codex ping failed"),
         }
     });
