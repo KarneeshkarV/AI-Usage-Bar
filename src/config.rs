@@ -95,8 +95,9 @@ impl Default for DisplayConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PingConfig {
     pub enabled: bool,
-    /// Fire within this many seconds *after* the window resets. Must exceed the
-    /// poll interval so the first post-reset poll still lands inside it.
+    /// How far (seconds) on either side of the `reset + 10s` fire time a
+    /// boundary is still eligible to schedule. Must exceed the poll interval so
+    /// a reset observed on the prior poll is still caught.
     pub threshold_secs: u64,
     pub claude_model: String,
     pub codex_model: String,

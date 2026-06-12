@@ -89,27 +89,45 @@ pub async fn run() -> Result<()> {
     }
 }
 
-/// Fire a single Claude ping per session-window boundary as it approaches reset.
-/// Dedups on the `reset` timestamp; runs the ping in the background so the
-/// Waybar loop never blocks on the LLM call.
-fn maybe_ping_claude(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc>>) {
-    let secs = reset.signed_duration_since(Utc::now()).num_seconds();
-    // Anchor the NEXT window: only fire once the reset has passed, so this ping
-    // is the first activity of the fresh window and pins its start. `secs <= 0`
-    // means reset reached; the lower bound ignores stale far-past snapshots.
-    if !(-(cfg.ping.threshold_secs as i64)..=0).contains(&secs) {
-        return;
+/// Seconds past the window reset to wait before pinging, so we anchor the new
+/// window only once we are safely *over* the old limit (clock-skew buffer).
+const OVER_LIMIT_SECS: i64 = 10;
+
+/// Decide whether to anchor the window that resets at `reset`, returning how
+/// many seconds to wait before firing so the ping lands ~10s past the reset.
+/// Dedups on the reset timestamp; `None` means don't schedule it now.
+fn ping_delay(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc>>) -> Option<u64> {
+    let fire_at = reset + chrono::Duration::seconds(OVER_LIMIT_SECS);
+    let delay = fire_at.signed_duration_since(Utc::now()).num_seconds();
+    // Eligible only within `threshold_secs` either side of the fire time: the
+    // upper side lets us schedule a boundary seen on the prior poll, the lower
+    // side drops stale far-past resets from an old snapshot.
+    let grace = cfg.ping.threshold_secs as i64;
+    if !(-grace..=grace).contains(&delay) {
+        return None;
     }
     if *last == Some(reset) {
-        return;
+        return None;
     }
     *last = Some(reset);
+    Some(delay.max(0) as u64)
+}
 
+/// Schedule a single Claude ping ~10s after the session window resets, so the
+/// ping is the first activity of the fresh window and pins its start. Runs in
+/// the background so the Waybar loop never blocks on the LLM call.
+fn maybe_ping_claude(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc>>) {
+    let Some(delay) = ping_delay(cfg, reset, last) else {
+        return;
+    };
     let binary = cfg.providers.claude.binary.clone();
     let model = cfg.ping.claude_model.clone();
     tokio::spawn(async move {
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_secs(delay)).await;
+        }
         match ping::ping_claude(binary.as_deref(), &model).await {
-            Ok(()) => tracing::info!("claude pre-reset ping sent"),
+            Ok(()) => tracing::info!("claude post-reset ping sent"),
             Err(e) => tracing::warn!(error = %e, "claude ping failed"),
         }
     });
