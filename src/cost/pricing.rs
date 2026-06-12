@@ -56,6 +56,22 @@ const FALLBACK: &[(&str, ModelPrice)] = &[
         },
     ),
     (
+        "gpt-5.1-codex",
+        ModelPrice {
+            input: 1.25e-6,
+            cached_input: 0.125e-6,
+            output: 10.0e-6,
+        },
+    ),
+    (
+        "gpt-5.1",
+        ModelPrice {
+            input: 1.25e-6,
+            cached_input: 0.125e-6,
+            output: 10.0e-6,
+        },
+    ),
+    (
         "gpt-5-mini",
         ModelPrice {
             input: 0.25e-6,
@@ -95,8 +111,74 @@ const FALLBACK: &[(&str, ModelPrice)] = &[
             output: 4.4e-6,
         },
     ),
+    (
+        "o3",
+        ModelPrice {
+            input: 2.0e-6,
+            cached_input: 0.5e-6,
+            output: 8.0e-6,
+        },
+    ),
+    (
+        "o4-mini",
+        ModelPrice {
+            input: 1.1e-6,
+            cached_input: 0.275e-6,
+            output: 4.4e-6,
+        },
+    ),
     // Claude (Anthropic) — note: Claude JSONL carries pre-computed cost, so these
     // only act as a fallback if costNanos is missing.
+    (
+        "claude-fable-5",
+        ModelPrice {
+            input: 10.0e-6,
+            cached_input: 1.0e-6,
+            output: 50.0e-6,
+        },
+    ),
+    (
+        "claude-mythos-5",
+        ModelPrice {
+            input: 10.0e-6,
+            cached_input: 1.0e-6,
+            output: 50.0e-6,
+        },
+    ),
+    // Opus 4.5–4.8 share $5/$25; the bare "claude-opus-4" key below stays at the
+    // legacy $15/$75 for Opus 4.0 / 4.1. Longest-prefix match picks the right one.
+    (
+        "claude-opus-4-8",
+        ModelPrice {
+            input: 5.0e-6,
+            cached_input: 0.5e-6,
+            output: 25.0e-6,
+        },
+    ),
+    (
+        "claude-opus-4-7",
+        ModelPrice {
+            input: 5.0e-6,
+            cached_input: 0.5e-6,
+            output: 25.0e-6,
+        },
+    ),
+    (
+        "claude-opus-4-6",
+        ModelPrice {
+            input: 5.0e-6,
+            cached_input: 0.5e-6,
+            output: 25.0e-6,
+        },
+    ),
+    (
+        "claude-opus-4-5",
+        ModelPrice {
+            input: 5.0e-6,
+            cached_input: 0.5e-6,
+            output: 25.0e-6,
+        },
+    ),
     (
         "claude-opus-4",
         ModelPrice {
@@ -111,6 +193,14 @@ const FALLBACK: &[(&str, ModelPrice)] = &[
             input: 3.0e-6,
             cached_input: 0.3e-6,
             output: 15.0e-6,
+        },
+    ),
+    (
+        "claude-haiku-4-5",
+        ModelPrice {
+            input: 1.0e-6,
+            cached_input: 0.1e-6,
+            output: 5.0e-6,
         },
     ),
     (
@@ -135,6 +225,14 @@ const FALLBACK: &[(&str, ModelPrice)] = &[
             input: 0.8e-6,
             cached_input: 0.08e-6,
             output: 4.0e-6,
+        },
+    ),
+    (
+        "claude-3-haiku",
+        ModelPrice {
+            input: 0.25e-6,
+            cached_input: 0.025e-6,
+            output: 1.25e-6,
         },
     ),
 ];
