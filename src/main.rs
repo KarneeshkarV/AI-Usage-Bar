@@ -5,6 +5,7 @@ use tracing_subscriber::EnvFilter;
 mod cli;
 mod config;
 mod cost;
+mod ping;
 mod providers;
 mod snapshot;
 mod util;

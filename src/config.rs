@@ -10,6 +10,8 @@ pub struct Config {
     pub providers: ProvidersConfig,
     #[serde(default)]
     pub display: DisplayConfig,
+    #[serde(default)]
+    pub ping: PingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +84,29 @@ impl Default for DisplayConfig {
             show_cost: true,
             warn_threshold: 70,
             crit_threshold: 90,
+        }
+    }
+}
+
+/// Auto-ping providers just after their 5h session window resets, so the ping
+/// becomes the first activity of the new window and anchors its start at a
+/// predictable time. Each ping is a headless one-shot (`claude -p ping`) run in
+/// an empty scratch dir.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PingConfig {
+    pub enabled: bool,
+    /// Fire within this many seconds *after* the window resets. Must exceed the
+    /// poll interval so the first post-reset poll still lands inside it.
+    pub threshold_secs: u64,
+    pub claude_model: String,
+}
+
+impl Default for PingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold_secs: 600,
+            claude_model: "sonnet".into(),
         }
     }
 }
