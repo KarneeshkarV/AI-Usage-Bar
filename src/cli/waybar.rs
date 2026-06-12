@@ -21,6 +21,7 @@ pub async fn run() -> Result<()> {
     let mut last_ping_claude: Option<DateTime<Utc>> = None;
     let mut last_ping_codex: Option<DateTime<Utc>> = None;
     let mut prev_reset_claude: Option<DateTime<Utc>> = None;
+    let mut prev_reset_codex: Option<DateTime<Utc>> = None;
 
     let stdout = std::io::stdout();
 
@@ -69,8 +70,9 @@ pub async fn run() -> Result<()> {
                 .and_then(|c| c.primary.as_ref())
                 .and_then(|w| w.resets_at);
             if let Some(reset) = codex_reset {
-                maybe_ping_codex(&cfg, reset, None, &mut last_ping_codex);
+                maybe_ping_codex(&cfg, reset, prev_reset_codex, &mut last_ping_codex);
             }
+            prev_reset_codex = codex_reset;
         }
 
         // Build + emit Waybar line
