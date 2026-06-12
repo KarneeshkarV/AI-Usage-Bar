@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 
 /// Format a duration-from-now as "2h 14m" / "45m" / "5d 3h" / "now".
 pub fn until(target: DateTime<Utc>) -> String {
@@ -18,4 +18,12 @@ pub fn until(target: DateTime<Utc>) -> String {
     } else {
         format!("{mins}m")
     }
+}
+
+/// Format an absolute instant in local time as "Mon 20 May 19:00".
+pub fn at(target: DateTime<Utc>) -> String {
+    target
+        .with_timezone(&Local)
+        .format("%a %d %b %H:%M")
+        .to_string()
 }

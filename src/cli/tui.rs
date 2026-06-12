@@ -16,7 +16,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 
 use crate::snapshot::{self, Snapshot};
-use crate::util::time::until;
+use crate::util::time::{at, until};
 
 // Catppuccin Mocha
 const BASE: Color = Color::Rgb(24, 24, 37);
@@ -365,7 +365,7 @@ fn render_usage_row(frame: &mut ratatui::Frame<'_>, area: Rect, row: &UsageRow) 
     // Detail row: info left, reset right
     let detail_cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
         .split(chunks[2]);
 
     frame.render_widget(
@@ -447,7 +447,15 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
     };
 
     if !claude.accounts.is_empty() {
-        return claude.accounts.iter().map(account_row).collect();
+        let mut rows = Vec::new();
+        for acc in &claude.accounts {
+            if acc.is_active && acc.error.is_none() {
+                rows.extend(expand_account_rows(acc));
+            } else {
+                rows.push(compact_account_row(acc));
+            }
+        }
+        return rows;
     }
 
     let mut rows = Vec::new();
@@ -502,20 +510,65 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
     rows
 }
 
-fn account_row(account: &crate::providers::claude::AccountUsage) -> UsageRow {
-    let label = if account.is_active {
-        format!("● {}", account.label)
-    } else {
-        format!("  {}", account.label)
-    };
+/// Active account: one gauge row per limit window so the weekly cap (the
+/// binding constraint on Max plans) is a visible bar, not truncated text.
+fn expand_account_rows(account: &crate::providers::claude::AccountUsage) -> Vec<UsageRow> {
+    let mut rows = Vec::new();
+
+    if let Some(w) = &account.session {
+        rows.push(UsageRow {
+            label: format!("● {}", account.label),
+            pct: w.used_percent,
+            detail: "session".into(),
+            reset: w.resets_at.map(|t| format!("resets in {}", until(t))),
+        });
+    }
+    if let Some(w) = &account.weekly {
+        rows.push(UsageRow {
+            label: "  weekly".into(),
+            pct: w.used_percent,
+            detail: match w.resets_at {
+                Some(t) => format!("all models · resets {}", at(t)),
+                None => "all models · 7d".into(),
+            },
+            reset: w.resets_at.map(|t| format!("in {}", until(t))),
+        });
+    }
+    if let Some(w) = &account.sonnet_weekly {
+        rows.push(UsageRow {
+            label: "  sonnet".into(),
+            pct: w.used_percent,
+            detail: match w.resets_at {
+                Some(t) => format!("sonnet · resets {}", at(t)),
+                None => "sonnet · 7d".into(),
+            },
+            reset: w.resets_at.map(|t| format!("in {}", until(t))),
+        });
+    }
+
+    if rows.is_empty() {
+        rows.push(UsageRow {
+            label: format!("● {}", account.label),
+            pct: 0.0,
+            detail: "no data".into(),
+            reset: None,
+        });
+    }
+    rows
+}
+
+/// Inactive / expired account: a single compact line.
+fn compact_account_row(account: &crate::providers::claude::AccountUsage) -> UsageRow {
+    let marker = if account.is_active { "●" } else { " " };
+    let label = format!("{marker} {}", account.label);
     let session_pct = account
         .session
         .as_ref()
         .map(|w| w.used_percent)
         .unwrap_or(0.0);
 
-    let detail = match &account.error {
-        Some(e) => e.chars().take(56).collect(),
+    let (detail, reset) = match &account.error {
+        Some(e) => (e.chars().take(40).collect::<String>(), None),
         None => {
             let mut parts: Vec<String> = Vec::new();
             if let Some(w) = &account.session {
@@ -527,19 +580,19 @@ fn account_row(account: &crate::providers::claude::AccountUsage) -> UsageRow {
             if let Some(w) = &account.sonnet_weekly {
                 parts.push(format!("sonnet {:.0}%", w.used_percent));
             }
-            if parts.is_empty() {
+            let detail = if parts.is_empty() {
                 "no data".into()
             } else {
                 parts.join(" · ")
-            }
+            };
+            let reset = account
+                .session
+                .as_ref()
+                .and_then(|w| w.resets_at)
+                .map(|t| format!("resets in {}", until(t)));
+            (detail, reset)
         }
     };
-
-    let reset = account
-        .session
-        .as_ref()
-        .and_then(|w| w.resets_at)
-        .map(|t| format!("resets in {}", until(t)));
 
     UsageRow {
         label,
