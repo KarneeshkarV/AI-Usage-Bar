@@ -28,3 +28,25 @@ pub async fn ping_claude(binary: Option<&str>, model: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// Fire a headless `codex exec ping` to anchor the next 5h session window.
+pub async fn ping_codex(binary: Option<&str>, model: &str, reasoning: &str) -> Result<()> {
+    let dir = scratch_dir()?;
+    let status = Command::new(binary.unwrap_or("codex"))
+        .current_dir(&dir)
+        .arg("exec")
+        .args(["-m", model])
+        .arg("-c")
+        .arg(format!("model_reasoning_effort=\"{reasoning}\""))
+        .arg("--skip-git-repo-check")
+        .arg("ping")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await?;
+    if !status.success() {
+        anyhow::bail!("codex exited with {status}");
+    }
+    Ok(())
+}

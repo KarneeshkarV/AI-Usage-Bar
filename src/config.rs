@@ -99,6 +99,8 @@ pub struct PingConfig {
     /// poll interval so the first post-reset poll still lands inside it.
     pub threshold_secs: u64,
     pub claude_model: String,
+    pub codex_model: String,
+    pub codex_reasoning: String,
 }
 
 impl Default for PingConfig {
@@ -107,6 +109,11 @@ impl Default for PingConfig {
             enabled: true,
             threshold_secs: 600,
             claude_model: "sonnet".into(),
+            codex_model: "gpt-5.4".into(),
+            // `minimal` is rejected for gpt-5.4 (its image_gen/web_search tools
+            // are incompatible with minimal effort); `low` is the cheapest that
+            // the API accepts.
+            codex_reasoning: "low".into(),
         }
     }
 }

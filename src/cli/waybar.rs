@@ -19,6 +19,7 @@ pub async fn run() -> Result<()> {
     let mut cost_tick = interval(Duration::from_secs(cfg.refresh.cost_refresh_secs.max(60)));
     let mut last_cost: Option<cost::CostReport> = None;
     let mut last_ping_claude: Option<DateTime<Utc>> = None;
+    let mut last_ping_codex: Option<DateTime<Utc>> = None;
 
     let stdout = std::io::stdout();
 
@@ -58,6 +59,15 @@ pub async fn run() -> Result<()> {
                 .and_then(|w| w.resets_at);
             if let Some(reset) = claude_reset {
                 maybe_ping_claude(&cfg, reset, &mut last_ping_claude);
+            }
+
+            let codex_reset = snap
+                .codex
+                .as_ref()
+                .and_then(|c| c.primary.as_ref())
+                .and_then(|w| w.resets_at);
+            if let Some(reset) = codex_reset {
+                maybe_ping_codex(&cfg, reset, &mut last_ping_codex);
             }
         }
 
@@ -101,6 +111,29 @@ fn maybe_ping_claude(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateT
         match ping::ping_claude(binary.as_deref(), &model).await {
             Ok(()) => tracing::info!("claude pre-reset ping sent"),
             Err(e) => tracing::warn!(error = %e, "claude ping failed"),
+        }
+    });
+}
+
+/// Codex counterpart to [`maybe_ping_claude`], keyed off the primary 5h window.
+fn maybe_ping_codex(cfg: &Config, reset: DateTime<Utc>, last: &mut Option<DateTime<Utc>>) {
+    let secs = reset.signed_duration_since(Utc::now()).num_seconds();
+    // Same post-reset anchoring as Claude; see `maybe_ping_claude`.
+    if !(-(cfg.ping.threshold_secs as i64)..=0).contains(&secs) {
+        return;
+    }
+    if *last == Some(reset) {
+        return;
+    }
+    *last = Some(reset);
+
+    let binary = cfg.providers.codex.binary.clone();
+    let model = cfg.ping.codex_model.clone();
+    let reasoning = cfg.ping.codex_reasoning.clone();
+    tokio::spawn(async move {
+        match ping::ping_codex(binary.as_deref(), &model, &reasoning).await {
+            Ok(()) => tracing::info!("codex pre-reset ping sent"),
+            Err(e) => tracing::warn!(error = %e, "codex ping failed"),
         }
     });
 }
