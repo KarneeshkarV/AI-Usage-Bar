@@ -242,6 +242,7 @@ mod tests {
             }),
             secondary: None,
             credits: None,
+            reset_credits: None,
             error: None,
         });
         snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
@@ -285,6 +286,7 @@ mod tests {
             primary: None,
             secondary: None,
             credits: None,
+            reset_credits: None,
             error: None,
         });
         snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
@@ -325,6 +327,7 @@ mod tests {
             }),
             secondary: None,
             credits: None,
+            reset_credits: None,
             error: None,
         });
         snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
@@ -366,6 +369,7 @@ mod tests {
             }),
             secondary: None,
             credits: None,
+            reset_credits: None,
             error: None,
         });
         snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
@@ -408,6 +412,7 @@ mod tests {
             }),
             secondary: None,
             credits: None,
+            reset_credits: None,
             error: None,
         });
         snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
@@ -445,6 +450,7 @@ mod tests {
             }),
             secondary: None,
             credits: None,
+            reset_credits: None,
             error: None,
         });
         snap.claude = Some(crate::providers::claude::ClaudeSnapshot {

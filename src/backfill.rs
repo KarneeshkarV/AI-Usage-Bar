@@ -248,6 +248,7 @@ mod tests {
                 Some(reset + chrono::Duration::days(3)),
             )),
             credits: None,
+            reset_credits: None,
             error: None,
         });
         cached.claude = Some(ClaudeSnapshot {
@@ -271,6 +272,7 @@ mod tests {
             primary: Some(window(66.0, None, None)),
             secondary: Some(window(12.0, None, None)),
             credits: None,
+            reset_credits: None,
             error: None,
         });
         fresh.claude = Some(ClaudeSnapshot {
@@ -316,6 +318,7 @@ mod tests {
             primary: Some(window(50.0, None, None)),
             secondary: None,
             credits: None,
+            reset_credits: None,
             error: None,
         });
         backfill_snapshot(&mut fresh, None, now);

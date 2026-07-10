@@ -118,6 +118,7 @@ mod tests {
                 resets_at: reset,
             }),
             credits: None,
+            reset_credits: None,
             error: None,
         });
         s

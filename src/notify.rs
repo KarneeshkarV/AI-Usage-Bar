@@ -454,6 +454,7 @@ mod tests {
             }),
             secondary: None,
             credits: None,
+            reset_credits: None,
             error: None,
         });
         s
