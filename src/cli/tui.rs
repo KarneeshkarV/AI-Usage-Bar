@@ -13,7 +13,7 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
+use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Sparkline};
 
 use chrono::Utc;
 
@@ -21,6 +21,7 @@ use crate::config::{Config, ResetStyle};
 use crate::pace::{self, DEFAULT_SESSION_MINUTES, DEFAULT_WEEKLY_MINUTES};
 use crate::provider_status;
 use crate::snapshot::{self, Snapshot};
+use crate::util::spark;
 use crate::util::time::reset_label;
 
 // Catppuccin Mocha
@@ -41,20 +42,20 @@ struct App {
     poll_interval: Duration,
     next_poll: Instant,
     reset_style: ResetStyle,
+    show_cost: bool,
 }
 
 impl App {
     fn new(poll_secs: u64) -> Self {
         let interval = Duration::from_secs(poll_secs.clamp(1, 30));
-        let reset_style = Config::load_or_default()
-            .map(|c| c.display.reset_style)
-            .unwrap_or_default();
+        let cfg = Config::load_or_default().unwrap_or_default();
         let mut app = Self {
             snapshot: None,
             read_error: None,
             poll_interval: interval,
             next_poll: Instant::now(),
-            reset_style,
+            reset_style: cfg.display.reset_style,
+            show_cost: cfg.display.show_cost,
         };
         app.refresh();
         app
@@ -147,23 +148,26 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &App) {
         vertical: 1,
     });
 
+    let cost_height = if app.show_cost { 4 } else { 0 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // status
-            Constraint::Length(1), // spacer
-            Constraint::Min(18),   // providers
-            Constraint::Length(1), // rule
-            Constraint::Length(3), // cost
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // footer
+            Constraint::Length(1),                                 // status
+            Constraint::Length(1),                                 // spacer
+            Constraint::Min(18),                                   // providers
+            Constraint::Length(if app.show_cost { 1 } else { 0 }), // rule
+            Constraint::Length(cost_height),                       // cost + sparkline
+            Constraint::Length(1),                                 // spacer
+            Constraint::Length(1),                                 // footer
         ])
         .split(inner);
 
     render_status(frame, chunks[0], app);
     render_providers(frame, chunks[2], app);
-    render_rule(frame, chunks[3]);
-    render_cost(frame, chunks[4], app);
+    if app.show_cost {
+        render_rule(frame, chunks[3]);
+        render_cost(frame, chunks[4], app);
+    }
     render_footer(frame, chunks[6]);
 }
 
@@ -893,30 +897,37 @@ fn render_rule(frame: &mut ratatui::Frame<'_>, area: Rect) {
 }
 
 fn render_cost(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
-    let mut lines: Vec<Line> = Vec::new();
+    if !app.show_cost {
+        return;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // caption
+            Constraint::Length(2), // sparkline
+            Constraint::Min(0),    // provider breakdown
+        ])
+        .split(area);
 
     if let Some(cost) = app.snapshot.as_ref().and_then(|s| s.cost.as_ref()) {
-        let today = chrono::Utc::now().date_naive().to_string();
-        let today_cost = cost.by_day.get(&today).copied().unwrap_or(0.0);
+        let today = Utc::now().date_naive();
+        let series = spark::daily_series(&cost.by_day, today, 30);
+        let values: Vec<f64> = series.iter().map(|(_, v)| *v).collect();
+        let caption = spark::cost_caption(&series, cost.total_usd, today);
 
-        lines.push(Line::from(vec![
-            Span::styled("today  ", Style::default().fg(SUBTEXT0)),
-            Span::styled(
-                format!("${today_cost:.2}"),
-                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("   ·   30 days  ", Style::default().fg(SUBTEXT0)),
-            Span::styled(
-                format!("${:.2}", cost.total_usd),
-                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!("   ·   {} models", cost.by_model.len()),
-                Style::default().fg(OVERLAY0),
-            ),
-        ]));
+        frame.render_widget(
+            Paragraph::new(Span::styled(caption, Style::default().fg(SUBTEXT0))),
+            chunks[0],
+        );
 
-        if !cost.by_provider.is_empty() {
+        let data = spark::sparkline_data(&values);
+        let sparkline = Sparkline::default()
+            .data(&data)
+            .style(Style::default().fg(MAUVE));
+        frame.render_widget(sparkline, chunks[1]);
+
+        if !cost.by_provider.is_empty() && chunks[2].height > 0 {
             let mut spans: Vec<Span> = Vec::new();
             for (i, (provider, usd)) in cost.by_provider.iter().enumerate() {
                 if i > 0 {
@@ -931,16 +942,17 @@ fn render_cost(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
                     Style::default().fg(TEXT),
                 ));
             }
-            lines.push(Line::from(spans));
+            frame.render_widget(Paragraph::new(Line::from(spans)), chunks[2]);
         }
     } else {
-        lines.push(Line::from(Span::styled(
-            "no cost data cached yet",
-            Style::default().fg(OVERLAY0),
-        )));
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "no cost data cached yet",
+                Style::default().fg(OVERLAY0),
+            )),
+            area,
+        );
     }
-
-    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn render_footer(frame: &mut ratatui::Frame<'_>, area: Rect) {

@@ -4,6 +4,7 @@ use crate::config::{Config, ResetStyle};
 use crate::provider_status;
 use crate::providers::{claude, codex, cursor, grok, opencode};
 use crate::snapshot::{self, Snapshot};
+use crate::util::spark;
 
 pub async fn run(detailed: bool) -> Result<()> {
     // Prefer the cached snapshot written by `ai-usage-bar waybar`. Fall back to a
@@ -13,14 +14,14 @@ pub async fn run(detailed: bool) -> Result<()> {
         _ => one_shot().await?,
     };
 
-    let style = Config::load_or_default()
-        .map(|c| c.display.reset_style)
-        .unwrap_or_default();
+    let cfg = Config::load_or_default().unwrap_or_default();
+    let style = cfg.display.reset_style;
+    let show_cost = cfg.display.show_cost;
 
     if detailed {
-        print_detailed(&snap, style);
+        print_detailed(&snap, style, show_cost);
     } else {
-        print_compact(&snap);
+        print_compact(&snap, show_cost);
     }
     Ok(())
 }
@@ -51,7 +52,7 @@ async fn one_shot() -> Result<Snapshot> {
     Ok(snap)
 }
 
-fn print_compact(snap: &Snapshot) {
+fn print_compact(snap: &Snapshot, show_cost: bool) {
     println!("AI Usage Bar — {}", snap.refreshed_at.to_rfc3339());
     if let Some(c) = &snap.codex {
         println!("codex: {}", c.summary_line());
@@ -78,12 +79,12 @@ fn print_compact(snap: &Snapshot) {
     if let Some(o) = &snap.opencode {
         println!("opencode: {}", o.summary_line());
     }
-    if let Some(cost) = &snap.cost {
+    if show_cost && let Some(cost) = &snap.cost {
         println!("30d cost: ${:.2}", cost.total_usd);
     }
 }
 
-fn print_detailed(snap: &Snapshot, style: ResetStyle) {
+fn print_detailed(snap: &Snapshot, style: ResetStyle, show_cost: bool) {
     println!("╭─ AI Usage Bar — usage snapshot");
     println!("│  refreshed: {}", snap.refreshed_at.to_rfc3339());
     println!("├─ Codex");
@@ -129,13 +130,22 @@ fn print_detailed(snap: &Snapshot, style: ResetStyle) {
             }
         }
     }
-    println!("├─ 30-day cost");
-    if let Some(cost) = &snap.cost {
-        for line in cost.detail_lines() {
-            println!("│  {line}");
+    if show_cost {
+        println!("├─ 30-day cost");
+        if let Some(cost) = &snap.cost {
+            for line in cost.detail_lines() {
+                println!("│  {line}");
+            }
+            let today = chrono::Utc::now().date_naive();
+            let series = spark::daily_series(&cost.by_day, today, 30);
+            let values: Vec<f64> = series.iter().map(|(_, v)| *v).collect();
+            let bars = spark::unicode_sparkline(&values);
+            let caption = spark::cost_caption(&series, cost.total_usd, today);
+            println!("│  {bars}");
+            println!("│  {caption}");
+        } else {
+            println!("│  (not scanned)");
         }
-    } else {
-        println!("│  (not scanned)");
     }
     println!("╰─");
 }
