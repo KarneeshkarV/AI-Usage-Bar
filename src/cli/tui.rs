@@ -186,9 +186,17 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
         .map(|p| format!("{p}%"))
         .unwrap_or_else(|| "—".into());
 
+    let grok_pct = app
+        .snapshot
+        .as_ref()
+        .and_then(|s| s.grok.as_ref())
+        .and_then(|c| c.worst_percent())
+        .map(|p| format!("{p}%"))
+        .unwrap_or_else(|| "—".into());
+
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(area);
 
     frame.render_widget(
@@ -202,10 +210,15 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
                 codex_pct,
                 Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
             ),
-            Span::styled("   claude ", Style::default().fg(OVERLAY0)),
+            Span::styled("  claude ", Style::default().fg(OVERLAY0)),
             Span::styled(
                 claude_pct,
                 Style::default().fg(BLUE).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  grok ", Style::default().fg(OVERLAY0)),
+            Span::styled(
+                grok_pct,
+                Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
             ),
         ]))
         .alignment(Alignment::Right),
@@ -213,42 +226,59 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
     );
 }
 
+#[derive(Clone, Copy)]
+enum ProviderKind {
+    Codex,
+    Claude,
+    Grok,
+}
+
 fn render_providers(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
-    // Split into two columns with a 2-cell gap
+    // Three columns with 1-cell gaps
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Length(2),
-            Constraint::Percentage(50),
+            Constraint::Percentage(33),
+            Constraint::Length(1),
+            Constraint::Percentage(33),
+            Constraint::Length(1),
+            Constraint::Percentage(34),
         ])
         .split(area);
 
-    render_provider_panel(frame, cols[0], app, false);
-    render_provider_panel(frame, cols[2], app, true);
+    render_provider_panel(frame, cols[0], app, ProviderKind::Codex);
+    render_provider_panel(frame, cols[2], app, ProviderKind::Claude);
+    render_provider_panel(frame, cols[4], app, ProviderKind::Grok);
 }
 
-fn render_provider_panel(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App, is_claude: bool) {
-    let (title, accent) = if is_claude {
-        ("CLAUDE", BLUE)
-    } else {
-        ("CODEX", MAUVE)
+fn render_provider_panel(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    app: &App,
+    kind: ProviderKind,
+) {
+    let (title, accent) = match kind {
+        ProviderKind::Codex => ("CODEX", MAUVE),
+        ProviderKind::Claude => ("CLAUDE", BLUE),
+        ProviderKind::Grok => ("GROK", GREEN),
     };
 
-    let plan_suffix = if is_claude {
-        app.snapshot
+    let plan_suffix = match kind {
+        ProviderKind::Claude => app
+            .snapshot
             .as_ref()
             .and_then(|s| s.claude.as_ref())
             .and_then(|c| c.plan_type.as_ref())
             .map(|p| format!(" · {p}"))
-            .unwrap_or_default()
-    } else {
-        app.snapshot
+            .unwrap_or_default(),
+        ProviderKind::Codex => app
+            .snapshot
             .as_ref()
             .and_then(|s| s.codex.as_ref())
             .and_then(|c| c.plan_type.as_ref())
             .map(|p| format!(" · {p}"))
-            .unwrap_or_default()
+            .unwrap_or_default(),
+        ProviderKind::Grok => String::new(),
     };
 
     let block = Block::default()
@@ -269,30 +299,37 @@ fn render_provider_panel(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App, 
     frame.render_widget(block, area);
 
     let inner = area.inner(Margin {
-        horizontal: 2,
+        horizontal: 1,
         vertical: 1,
     });
 
-    let rows = if is_claude {
-        claude_rows(app)
-    } else {
-        codex_rows(app)
+    let rows = match kind {
+        ProviderKind::Claude => claude_rows(app),
+        ProviderKind::Codex => codex_rows(app),
+        ProviderKind::Grok => grok_rows(app),
     };
 
     if rows.is_empty() {
-        let fallback = if is_claude {
-            app.snapshot
+        let fallback = match kind {
+            ProviderKind::Claude => app
+                .snapshot
                 .as_ref()
                 .and_then(|s| s.claude.as_ref())
                 .and_then(|c| c.error.as_deref())
-                .unwrap_or("no data")
-        } else {
-            app.snapshot
+                .unwrap_or("no data"),
+            ProviderKind::Codex => app
+                .snapshot
                 .as_ref()
                 .and_then(|s| s.codex.as_ref())
                 .and_then(|c| c.error.as_deref())
                 .or(app.read_error.as_deref())
-                .unwrap_or("waiting for snapshot")
+                .unwrap_or("waiting for snapshot"),
+            ProviderKind::Grok => app
+                .snapshot
+                .as_ref()
+                .and_then(|s| s.grok.as_ref())
+                .and_then(|c| c.error.as_deref())
+                .unwrap_or("no data"),
         };
         frame.render_widget(
             Paragraph::new(Span::styled(fallback, Style::default().fg(OVERLAY0)))
@@ -504,6 +541,51 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
     rows
 }
 
+fn grok_rows(app: &App) -> Vec<UsageRow> {
+    let Some(snap) = &app.snapshot else {
+        return Vec::new();
+    };
+    let Some(grok) = &snap.grok else {
+        return Vec::new();
+    };
+
+    let mut rows = Vec::new();
+    if let Some(w) = &grok.primary {
+        let detail = match (grok.included_used_usd, grok.monthly_limit_usd) {
+            (Some(used), Some(limit)) => format!("${used:.2} / ${limit:.2}"),
+            _ => w
+                .window_minutes
+                .map(|m| {
+                    let days = (m / (24 * 60)).max(1);
+                    format!("{days}d window")
+                })
+                .unwrap_or_else(|| "monthly".into()),
+        };
+        rows.push(UsageRow {
+            label: "Monthly".into(),
+            pct: w.used_percent,
+            detail,
+            reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+        });
+    }
+    if let Some(used) = grok.on_demand_used_usd
+        && (grok.on_demand_enabled || used > 0.0)
+    {
+        rows.push(UsageRow {
+            label: "On-demand".into(),
+            pct: 0.0,
+            detail: format!("${used:.2}"),
+            reset: None,
+        });
+    }
+    if rows.is_empty()
+        && let Some(e) = &grok.error
+    {
+        rows.push(error_row(e));
+    }
+    rows
+}
+
 fn error_row(error: &str) -> UsageRow {
     UsageRow {
         label: "Unavailable".into(),
@@ -608,7 +690,7 @@ fn color_for_pct(pct: f64) -> Color {
 }
 
 fn centered(area: Rect, max_width: u16, max_height: u16) -> Rect {
-    let width = area.width.min(max_width).max(60);
+    let width = area.width.min(max_width).max(80);
     let height = area.height.min(max_height).max(26);
     let vertical = Layout::default()
         .direction(Direction::Vertical)

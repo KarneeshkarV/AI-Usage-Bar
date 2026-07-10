@@ -43,6 +43,15 @@ impl WaybarLine {
             state = state.combine(State::Auth);
         }
 
+        // Grok: omit completely when inactive / not refreshed (auto-detect).
+        if let Some(g) = &snap.grok {
+            let pct = g.worst_percent().unwrap_or(0);
+            parts.push(format!("G {}%", remaining_percent(pct)));
+            worst = worst.max(pct);
+            tooltip.extend(g.tooltip_lines(cfg.display.reset_style));
+            state = state.combine(g.state(cfg));
+        }
+
         if cfg.display.show_cost
             && let Some(cost) = &snap.cost
         {

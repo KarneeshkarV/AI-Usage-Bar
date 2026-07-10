@@ -5,13 +5,16 @@ use std::io::Write;
 
 use crate::config::cache_dir;
 use crate::cost::CostReport;
-use crate::providers::{claude::ClaudeSnapshot, codex::CodexSnapshot};
+use crate::providers::{claude::ClaudeSnapshot, codex::CodexSnapshot, grok::GrokSnapshot};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snapshot {
     pub refreshed_at: DateTime<Utc>,
     pub codex: Option<CodexSnapshot>,
     pub claude: Option<ClaudeSnapshot>,
+    /// Present only when the Grok provider is active and a refresh was attempted.
+    #[serde(default)]
+    pub grok: Option<GrokSnapshot>,
     pub cost: Option<CostReport>,
 }
 
@@ -21,6 +24,7 @@ impl Snapshot {
             refreshed_at: Utc::now(),
             codex: None,
             claude: None,
+            grok: None,
             cost: None,
         }
     }

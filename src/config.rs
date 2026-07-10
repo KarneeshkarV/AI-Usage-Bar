@@ -35,6 +35,21 @@ pub struct ProvidersConfig {
     pub codex: CodexProviderConfig,
     #[serde(default)]
     pub claude: ClaudeProviderConfig,
+    #[serde(default)]
+    pub grok: GrokProviderConfig,
+}
+
+/// Shared enablement for providers that auto-detect credentials.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderMode {
+    /// Enable when local credentials / binary are present.
+    #[default]
+    Auto,
+    /// Always attempt a refresh.
+    On,
+    /// Never poll; omit from Waybar entirely.
+    Off,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +82,55 @@ impl Default for ClaudeProviderConfig {
             prefer: vec!["oauth_usage".into(), "cookies".into(), "pty".into()],
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GrokProviderConfig {
+    #[serde(default)]
+    pub mode: ProviderMode,
+    #[serde(default)]
+    pub binary: Option<String>,
+}
+
+impl Default for GrokProviderConfig {
+    fn default() -> Self {
+        Self {
+            mode: ProviderMode::Auto,
+            binary: None,
+        }
+    }
+}
+
+impl GrokProviderConfig {
+    /// Whether the provider should be polled / shown.
+    ///
+    /// Auto activates when `~/.grok/auth.json` exists (or `$GROK_HOME/auth.json`)
+    /// or the `grok` binary resolves on PATH / config override.
+    pub fn is_active(&self) -> bool {
+        match self.mode {
+            ProviderMode::Off => false,
+            ProviderMode::On => true,
+            ProviderMode::Auto => {
+                grok_auth_json_path().is_some_and(|p| p.is_file())
+                    || crate::util::path::resolve_binary("grok", self.binary.as_deref()).is_some()
+            }
+        }
+    }
+}
+
+/// CodexBar `GrokCredentialsStore.grokHomeURL`: `$GROK_HOME` or `~/.grok`.
+pub fn grok_home_dir() -> Option<PathBuf> {
+    if let Ok(custom) = std::env::var("GROK_HOME") {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+    dirs::home_dir().map(|h| h.join(".grok"))
+}
+
+pub fn grok_auth_json_path() -> Option<PathBuf> {
+    grok_home_dir().map(|h| h.join("auth.json"))
 }
 
 /// How usage-window reset times are rendered in tooltips, TUI, and status.
@@ -195,5 +259,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(cfg.display.reset_style, ResetStyle::Absolute);
+    }
+
+    #[test]
+    fn grok_provider_defaults_when_absent() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.providers.grok.mode, ProviderMode::Auto);
+        assert!(cfg.providers.grok.binary.is_none());
+    }
+
+    #[test]
+    fn grok_provider_mode_parses() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [providers.grok]
+            mode = "off"
+            binary = "/usr/local/bin/grok"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.providers.grok.mode, ProviderMode::Off);
+        assert_eq!(
+            cfg.providers.grok.binary.as_deref(),
+            Some("/usr/local/bin/grok")
+        );
+        assert!(!cfg.providers.grok.is_active());
     }
 }
