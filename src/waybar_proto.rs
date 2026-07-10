@@ -19,60 +19,76 @@ impl WaybarLine {
         let mut worst: u8 = 0;
         let mut tooltip = Vec::new();
         let mut state = State::Ok;
+        let on_bar = |name: &str| cfg.display.bar_provider_allowed(name);
 
         if let Some(c) = &snap.codex {
-            let pct = c.worst_percent().unwrap_or(0);
-            parts.push(format!("C {}%", remaining_percent(pct)));
-            worst = worst.max(pct);
+            // Tooltip always includes every active provider.
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
             push_status_line(&mut tooltip, &snap.provider_status, "codex");
-            state = state.combine(c.state(cfg));
-        } else {
+            if on_bar("codex") {
+                let pct = c.worst_percent().unwrap_or(0);
+                parts.push(format!("C {}%", remaining_percent(pct)));
+                worst = worst.max(pct);
+                state = state.combine(c.state(cfg));
+            }
+        } else if on_bar("codex") {
             parts.push("C —".into());
             tooltip.push("Codex: (unavailable)".into());
             state = state.combine(State::Auth);
+        } else {
+            tooltip.push("Codex: (unavailable)".into());
         }
 
         if let Some(c) = &snap.claude {
-            let pct = c.worst_percent().unwrap_or(0);
-            parts.push(format!("Cl {}%", remaining_percent(pct)));
-            worst = worst.max(pct);
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
             push_status_line(&mut tooltip, &snap.provider_status, "claude");
-            state = state.combine(c.state(cfg));
-        } else {
+            if on_bar("claude") {
+                let pct = c.worst_percent().unwrap_or(0);
+                parts.push(format!("Cl {}%", remaining_percent(pct)));
+                worst = worst.max(pct);
+                state = state.combine(c.state(cfg));
+            }
+        } else if on_bar("claude") {
             parts.push("Cl —".into());
             tooltip.push("Claude: (unavailable)".into());
             state = state.combine(State::Auth);
+        } else {
+            tooltip.push("Claude: (unavailable)".into());
         }
 
         // Grok: omit completely when inactive / not refreshed (auto-detect).
         if let Some(g) = &snap.grok {
-            let pct = g.worst_percent().unwrap_or(0);
-            parts.push(format!("G {}%", remaining_percent(pct)));
-            worst = worst.max(pct);
             tooltip.extend(g.tooltip_lines(cfg.display.reset_style));
-            state = state.combine(g.state(cfg));
+            if on_bar("grok") {
+                let pct = g.worst_percent().unwrap_or(0);
+                parts.push(format!("G {}%", remaining_percent(pct)));
+                worst = worst.max(pct);
+                state = state.combine(g.state(cfg));
+            }
         }
 
         // Cursor: omit completely when inactive / not refreshed (auto-detect).
         if let Some(c) = &snap.cursor {
-            let pct = c.worst_percent().unwrap_or(0);
-            parts.push(format!("Cu {}%", remaining_percent(pct)));
-            worst = worst.max(pct);
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
             push_status_line(&mut tooltip, &snap.provider_status, "cursor");
-            state = state.combine(c.state(cfg));
+            if on_bar("cursor") {
+                let pct = c.worst_percent().unwrap_or(0);
+                parts.push(format!("Cu {}%", remaining_percent(pct)));
+                worst = worst.max(pct);
+                state = state.combine(c.state(cfg));
+            }
         }
 
         // OpenCode: omit when inactive; balance dollars (no percent window).
         if let Some(o) = &snap.opencode {
-            if let Some(seg) = o.waybar_segment() {
-                parts.push(seg);
-            }
-            // Does not contribute to percent-based warn/crit.
             tooltip.extend(o.tooltip_lines(cfg.display.reset_style));
-            state = state.combine(o.state(cfg));
+            if on_bar("opencode") {
+                if let Some(seg) = o.waybar_segment() {
+                    parts.push(seg);
+                }
+                // Does not contribute to percent-based warn/crit.
+                state = state.combine(o.state(cfg));
+            }
         }
 
         if cfg.display.show_cost
@@ -82,7 +98,7 @@ impl WaybarLine {
         }
 
         if snap.is_stale(std::time::Duration::from_secs(
-            cfg.refresh.interval_secs * 3,
+            cfg.refresh.usage_interval() * 3,
         )) {
             state = state.combine(State::Stale);
         }
@@ -278,5 +294,63 @@ mod tests {
 
         let line = WaybarLine::from_snapshot(&snap, &cfg);
         assert_eq!(line.class, "warn");
+    }
+
+    #[test]
+    fn bar_providers_excludes_from_text_and_severity() {
+        let mut cfg = Config::default();
+        cfg.display.bar_providers = Some(vec!["claude".into()]);
+        let mut snap = Snapshot::new();
+        snap.refreshed_at = Utc::now();
+        snap.codex = Some(crate::providers::codex::CodexSnapshot {
+            account_email: None,
+            plan_type: None,
+            primary: Some(crate::providers::codex::Window {
+                used_percent: 95.0,
+                window_minutes: Some(300),
+                resets_at: None,
+            }),
+            secondary: None,
+            credits: None,
+            error: None,
+        });
+        snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
+            account_email: None,
+            plan_type: None,
+            session: Some(crate::providers::claude::Window {
+                used_percent: 10.0,
+                resets_at: None,
+            }),
+            weekly: None,
+            sonnet_weekly: None,
+            extra: None,
+            source: None,
+            error: None,
+        });
+
+        let line = WaybarLine::from_snapshot(&snap, &cfg);
+        assert!(
+            line.text.contains("Cl "),
+            "claude should be in text: {}",
+            line.text
+        );
+        assert!(
+            !line.text.contains("C "),
+            "codex excluded from text: {}",
+            line.text
+        );
+        assert_eq!(
+            line.percentage, 10,
+            "excluded codex must not drive percentage"
+        );
+        assert_eq!(line.class, "ok", "excluded codex crit must not drive class");
+        // Tooltip still shows both providers.
+        assert!(
+            line.tooltip.to_lowercase().contains("codex")
+                || line.tooltip.contains("primary")
+                || line.tooltip.contains("C"),
+            "tooltip should still mention codex windows: {}",
+            line.tooltip
+        );
     }
 }

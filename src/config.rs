@@ -20,18 +20,63 @@ pub struct Config {
     pub notify: NotifyConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RefreshConfig {
-    pub interval_secs: u64,
-    pub cost_refresh_secs: u64,
+/// Named refresh cadence. Explicit `interval_secs` / `cost_refresh_secs`
+/// override the matching field from the preset (or from `normal` defaults).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RefreshPreset {
+    Fast,
+    #[default]
+    Normal,
+    Slow,
 }
 
-impl Default for RefreshConfig {
-    fn default() -> Self {
-        Self {
-            interval_secs: 300,
-            cost_refresh_secs: 3600,
+impl RefreshPreset {
+    pub fn usage_secs(self) -> u64 {
+        match self {
+            Self::Fast => 60,
+            Self::Normal => 300,
+            Self::Slow => 900,
         }
+    }
+
+    pub fn cost_secs(self) -> u64 {
+        match self {
+            Self::Fast => 900,
+            Self::Normal => 3600,
+            Self::Slow => 7200,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RefreshConfig {
+    /// Optional named base cadence (`fast` / `normal` / `slow`).
+    #[serde(default)]
+    pub preset: Option<RefreshPreset>,
+    /// Provider poll interval. Overrides the preset field when set.
+    #[serde(default)]
+    pub interval_secs: Option<u64>,
+    /// Local cost-scan interval. Overrides the preset field when set.
+    #[serde(default)]
+    pub cost_refresh_secs: Option<u64>,
+}
+
+impl RefreshConfig {
+    fn base_preset(&self) -> RefreshPreset {
+        self.preset.unwrap_or(RefreshPreset::Normal)
+    }
+
+    /// Resolved provider-usage poll interval (seconds).
+    pub fn usage_interval(&self) -> u64 {
+        self.interval_secs
+            .unwrap_or_else(|| self.base_preset().usage_secs())
+    }
+
+    /// Resolved local cost-scan interval (seconds).
+    pub fn cost_interval(&self) -> u64 {
+        self.cost_refresh_secs
+            .unwrap_or_else(|| self.base_preset().cost_secs())
     }
 }
 
@@ -223,6 +268,9 @@ pub enum ResetStyle {
     Absolute,
 }
 
+/// Known provider ids accepted by `display.bar_providers`.
+pub const BAR_PROVIDER_NAMES: &[&str] = &["codex", "claude", "grok", "cursor", "opencode"];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisplayConfig {
     pub merge_text: bool,
@@ -232,6 +280,11 @@ pub struct DisplayConfig {
     /// Countdown vs absolute local time for reset phrasing.
     #[serde(default)]
     pub reset_style: ResetStyle,
+    /// Providers allowed in the Waybar *text* segment (and severity/percentage).
+    /// When absent, every active provider appears (legacy behaviour). Tooltip /
+    /// status / TUI always show all active providers.
+    #[serde(default)]
+    pub bar_providers: Option<Vec<String>>,
 }
 
 impl Default for DisplayConfig {
@@ -242,8 +295,45 @@ impl Default for DisplayConfig {
             warn_threshold: 70,
             crit_threshold: 90,
             reset_style: ResetStyle::Countdown,
+            bar_providers: None,
         }
     }
+}
+
+impl DisplayConfig {
+    /// Whether `provider` may appear in the compact Waybar text / severity.
+    /// Unknown or empty filter lists are treated as "allow all".
+    pub fn bar_provider_allowed(&self, provider: &str) -> bool {
+        let Some(list) = &self.bar_providers else {
+            return true;
+        };
+        if list.is_empty() {
+            return true;
+        }
+        list.iter()
+            .any(|p| p.eq_ignore_ascii_case(provider) && is_known_bar_provider(p))
+    }
+
+    /// Warn once about unknown `bar_providers` entries (call at waybar startup).
+    pub fn warn_unknown_bar_providers(&self) {
+        let Some(list) = &self.bar_providers else {
+            return;
+        };
+        for name in list {
+            if !is_known_bar_provider(name) {
+                tracing::warn!(
+                    provider = %name,
+                    "unknown display.bar_providers entry; ignoring"
+                );
+            }
+        }
+    }
+}
+
+fn is_known_bar_provider(name: &str) -> bool {
+    BAR_PROVIDER_NAMES
+        .iter()
+        .any(|k| name.eq_ignore_ascii_case(k))
 }
 
 /// Auto-ping providers just after their 5h session window resets, so the ping
@@ -483,5 +573,118 @@ mod tests {
         .unwrap();
         assert!(!cfg.notify.enabled);
         assert!(!cfg.notify.on_reset);
+    }
+
+    #[test]
+    fn refresh_no_preset_uses_normal_defaults() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.refresh.usage_interval(), 300);
+        assert_eq!(cfg.refresh.cost_interval(), 3600);
+        assert!(cfg.refresh.preset.is_none());
+        assert!(cfg.refresh.interval_secs.is_none());
+    }
+
+    #[test]
+    fn refresh_explicit_intervals_back_compat() {
+        // Existing configs that set plain numbers must behave identically.
+        let cfg: Config = toml::from_str(
+            r#"
+            [refresh]
+            interval_secs = 120
+            cost_refresh_secs = 1800
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.refresh.usage_interval(), 120);
+        assert_eq!(cfg.refresh.cost_interval(), 1800);
+    }
+
+    #[test]
+    fn refresh_preset_only() {
+        for (preset, usage, cost) in [
+            ("fast", 60, 900),
+            ("normal", 300, 3600),
+            ("slow", 900, 7200),
+        ] {
+            let raw = format!(
+                r#"
+                [refresh]
+                preset = "{preset}"
+                "#
+            );
+            let cfg: Config = toml::from_str(&raw).unwrap();
+            assert_eq!(cfg.refresh.usage_interval(), usage, "preset={preset}");
+            assert_eq!(cfg.refresh.cost_interval(), cost, "preset={preset}");
+        }
+    }
+
+    #[test]
+    fn refresh_preset_plus_field_override() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [refresh]
+            preset = "fast"
+            interval_secs = 45
+            "#,
+        )
+        .unwrap();
+        // Explicit usage overrides fast's 60; cost still from fast.
+        assert_eq!(cfg.refresh.usage_interval(), 45);
+        assert_eq!(cfg.refresh.cost_interval(), 900);
+
+        let cfg: Config = toml::from_str(
+            r#"
+            [refresh]
+            preset = "slow"
+            cost_refresh_secs = 999
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.refresh.usage_interval(), 900);
+        assert_eq!(cfg.refresh.cost_interval(), 999);
+    }
+
+    #[test]
+    fn bar_providers_default_allows_all() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert!(cfg.display.bar_providers.is_none());
+        assert!(cfg.display.bar_provider_allowed("codex"));
+        assert!(cfg.display.bar_provider_allowed("opencode"));
+    }
+
+    #[test]
+    fn bar_providers_filters_known_names() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [display]
+            merge_text = true
+            show_cost = true
+            warn_threshold = 70
+            crit_threshold = 90
+            bar_providers = ["codex", "claude"]
+            "#,
+        )
+        .unwrap();
+        assert!(cfg.display.bar_provider_allowed("codex"));
+        assert!(cfg.display.bar_provider_allowed("Claude"));
+        assert!(!cfg.display.bar_provider_allowed("grok"));
+        assert!(!cfg.display.bar_provider_allowed("cursor"));
+    }
+
+    #[test]
+    fn bar_providers_unknown_names_ignored() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [display]
+            merge_text = true
+            show_cost = true
+            warn_threshold = 70
+            crit_threshold = 90
+            bar_providers = ["not-a-provider", "codex"]
+            "#,
+        )
+        .unwrap();
+        assert!(cfg.display.bar_provider_allowed("codex"));
+        assert!(!cfg.display.bar_provider_allowed("not-a-provider"));
     }
 }

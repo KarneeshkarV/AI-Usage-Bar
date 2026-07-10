@@ -22,8 +22,10 @@ pub async fn run() -> Result<()> {
     let mut opencode_client = opencode::Client::new(cfg.providers.opencode.clone());
     let mut notifier = Notifier::from_config(&cfg);
 
-    let mut tick = interval(Duration::from_secs(cfg.refresh.interval_secs.max(30)));
-    let mut cost_tick = interval(Duration::from_secs(cfg.refresh.cost_refresh_secs.max(60)));
+    cfg.display.warn_unknown_bar_providers();
+
+    let mut tick = interval(Duration::from_secs(cfg.refresh.usage_interval().max(30)));
+    let mut cost_tick = interval(Duration::from_secs(cfg.refresh.cost_interval().max(60)));
     let mut status_tick = interval(Duration::from_secs(provider_status::POLL_INTERVAL_SECS));
     let mut last_cost: Option<cost::CostReport> = None;
     let mut last_status: Vec<ProviderStatus> = Vec::new();
