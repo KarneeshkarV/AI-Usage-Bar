@@ -6,6 +6,7 @@ mod backfill;
 mod cli;
 mod config;
 mod cost;
+mod pace;
 mod ping;
 mod providers;
 mod snapshot;

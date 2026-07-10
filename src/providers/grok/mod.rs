@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, GrokProviderConfig, ResetStyle};
+use crate::pace::{self, DEFAULT_WEEKLY_MINUTES};
 use crate::util::time::reset_label;
 use crate::waybar_proto::State;
 
@@ -102,6 +103,11 @@ impl GrokSnapshot {
         if let Some(line) = self.monthly_line("  monthly  ", style) {
             out.push(line);
         }
+        if let Some(w) = &self.primary
+            && let Some(line) = pace_line(w, Utc::now(), "    ")
+        {
+            out.push(line);
+        }
         if let Some(line) = self.on_demand_line("  on-demand") {
             out.push(line);
         }
@@ -119,6 +125,11 @@ impl GrokSnapshot {
             out.push(format!("plan: {tier}"));
         }
         if let Some(line) = self.monthly_line("monthly", style) {
+            out.push(line);
+        }
+        if let Some(w) = &self.primary
+            && let Some(line) = pace_line(w, Utc::now(), "  ")
+        {
             out.push(line);
         }
         if let Some(line) = self.on_demand_line("on-demand") {
@@ -154,6 +165,17 @@ impl GrokSnapshot {
         }
         Some(format!("{label} ${used:.2}"))
     }
+}
+
+fn pace_line(w: &Window, now: DateTime<Utc>, indent: &str) -> Option<String> {
+    pace::line_for_window(
+        w.used_percent,
+        w.window_minutes,
+        w.resets_at,
+        now,
+        DEFAULT_WEEKLY_MINUTES,
+        indent,
+    )
 }
 
 pub struct Client {

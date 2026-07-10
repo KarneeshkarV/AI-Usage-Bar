@@ -15,7 +15,10 @@ use ratatui::symbols;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 
+use chrono::Utc;
+
 use crate::config::{Config, ResetStyle};
+use crate::pace::{self, DEFAULT_SESSION_MINUTES, DEFAULT_WEEKLY_MINUTES};
 use crate::snapshot::{self, Snapshot};
 use crate::util::time::reset_label;
 
@@ -408,7 +411,13 @@ fn render_provider_panel(
 
     let row_constraints = rows
         .iter()
-        .map(|_| Constraint::Length(4))
+        .map(|r| {
+            if r.pace.is_some() {
+                Constraint::Length(5)
+            } else {
+                Constraint::Length(4)
+            }
+        })
         .chain([Constraint::Min(0)])
         .collect::<Vec<_>>();
 
@@ -427,17 +436,30 @@ struct UsageRow {
     pct: f64,
     detail: String,
     reset: Option<String>,
+    pace: Option<String>,
 }
 
 fn render_usage_row(frame: &mut ratatui::Frame<'_>, area: Rect, row: &UsageRow) {
+    let has_pace = row.pace.is_some();
+    let constraints = if has_pace {
+        vec![
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ]
+    } else {
+        vec![
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ]
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
+        .constraints(constraints)
         .split(area);
 
     // Label row: name left, percentage right
@@ -492,6 +514,13 @@ fn render_usage_row(frame: &mut ratatui::Frame<'_>, area: Rect, row: &UsageRow) 
             detail_cols[1],
         );
     }
+
+    if let Some(pace) = &row.pace {
+        frame.render_widget(
+            Paragraph::new(Span::styled(pace.as_str(), Style::default().fg(OVERLAY0))),
+            chunks[3],
+        );
+    }
 }
 
 fn codex_rows(app: &App) -> Vec<UsageRow> {
@@ -503,6 +532,7 @@ fn codex_rows(app: &App) -> Vec<UsageRow> {
     };
 
     let mut rows = Vec::new();
+    let now = Utc::now();
     if let Some(w) = &codex.primary {
         rows.push(UsageRow {
             label: "Primary".into(),
@@ -512,6 +542,14 @@ fn codex_rows(app: &App) -> Vec<UsageRow> {
                 .map(|m| format!("{}h window", (m / 60).max(1)))
                 .unwrap_or_else(|| "session window".into()),
             reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+            pace: pace::line_for_window(
+                w.used_percent,
+                w.window_minutes,
+                w.resets_at,
+                now,
+                DEFAULT_SESSION_MINUTES,
+                "",
+            ),
         });
     }
     if let Some(w) = &codex.secondary {
@@ -523,6 +561,14 @@ fn codex_rows(app: &App) -> Vec<UsageRow> {
                 .map(|m| format!("{}h window", (m / 60).max(1)))
                 .unwrap_or_else(|| "secondary window".into()),
             reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+            pace: pace::line_for_window(
+                w.used_percent,
+                w.window_minutes,
+                w.resets_at,
+                now,
+                DEFAULT_WEEKLY_MINUTES,
+                "",
+            ),
         });
     }
     if let Some(c) = &codex.credits {
@@ -538,6 +584,7 @@ fn codex_rows(app: &App) -> Vec<UsageRow> {
             } else {
                 None
             },
+            pace: None,
         });
     }
     if rows.is_empty()
@@ -557,6 +604,7 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
     };
 
     let mut rows = Vec::new();
+    let now = Utc::now();
     if let Some(w) = &claude.session {
         rows.push(UsageRow {
             label: "Session".into(),
@@ -566,6 +614,14 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
                 .clone()
                 .unwrap_or_else(|| "current session".into()),
             reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+            pace: pace::line_for_window(
+                w.used_percent,
+                None,
+                w.resets_at,
+                now,
+                DEFAULT_SESSION_MINUTES,
+                "",
+            ),
         });
     }
     if let Some(w) = &claude.weekly {
@@ -574,6 +630,14 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
             pct: w.used_percent,
             detail: "weekly window".into(),
             reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+            pace: pace::line_for_window(
+                w.used_percent,
+                None,
+                w.resets_at,
+                now,
+                DEFAULT_WEEKLY_MINUTES,
+                "",
+            ),
         });
     }
     if let Some(w) = &claude.sonnet_weekly {
@@ -582,6 +646,14 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
             pct: w.used_percent,
             detail: "sonnet weekly".into(),
             reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+            pace: pace::line_for_window(
+                w.used_percent,
+                None,
+                w.resets_at,
+                now,
+                DEFAULT_WEEKLY_MINUTES,
+                "",
+            ),
         });
     }
     if let Some(extra) = &claude.extra {
@@ -598,6 +670,7 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
                 extra.used_usd, extra.limit_usd, extra.currency
             ),
             reset: Some(format!("{pct:.0}% used")),
+            pace: None,
         });
     }
     if rows.is_empty()
@@ -617,6 +690,7 @@ fn grok_rows(app: &App) -> Vec<UsageRow> {
     };
 
     let mut rows = Vec::new();
+    let now = Utc::now();
     if let Some(w) = &grok.primary {
         let detail = match (grok.included_used_usd, grok.monthly_limit_usd) {
             (Some(used), Some(limit)) => format!("${used:.2} / ${limit:.2}"),
@@ -633,6 +707,14 @@ fn grok_rows(app: &App) -> Vec<UsageRow> {
             pct: w.used_percent,
             detail,
             reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+            pace: pace::line_for_window(
+                w.used_percent,
+                w.window_minutes,
+                w.resets_at,
+                now,
+                DEFAULT_WEEKLY_MINUTES,
+                "",
+            ),
         });
     }
     if let Some(used) = grok.on_demand_used_usd
@@ -643,6 +725,7 @@ fn grok_rows(app: &App) -> Vec<UsageRow> {
             pct: 0.0,
             detail: format!("${used:.2}"),
             reset: None,
+            pace: None,
         });
     }
     if rows.is_empty()
@@ -662,6 +745,7 @@ fn cursor_rows(app: &App) -> Vec<UsageRow> {
     };
 
     let mut rows = Vec::new();
+    let now = Utc::now();
     if let Some(w) = &cursor.primary {
         let detail =
             if let (Some(used), Some(limit)) = (cursor.requests_used, cursor.requests_limit) {
@@ -683,6 +767,14 @@ fn cursor_rows(app: &App) -> Vec<UsageRow> {
             pct: w.used_percent,
             detail,
             reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+            pace: pace::line_for_window(
+                w.used_percent,
+                w.window_minutes,
+                w.resets_at,
+                now,
+                DEFAULT_WEEKLY_MINUTES,
+                "",
+            ),
         });
     }
     if let Some(used) = cursor.on_demand_used_usd
@@ -697,6 +789,7 @@ fn cursor_rows(app: &App) -> Vec<UsageRow> {
             pct: 0.0,
             detail,
             reset: None,
+            pace: None,
         });
     }
     if rows.is_empty()
@@ -722,6 +815,7 @@ fn opencode_rows(app: &App) -> Vec<UsageRow> {
             pct: if b <= 0.0 { 100.0 } else { 0.0 },
             detail: format!("${b:.2}"),
             reset: None,
+            pace: None,
         });
     }
     if let Some(cost) = oc.local_30d_cost_usd {
@@ -730,6 +824,7 @@ fn opencode_rows(app: &App) -> Vec<UsageRow> {
             pct: 0.0,
             detail: format!("${cost:.2}"),
             reset: None,
+            pace: None,
         });
     }
     if rows.is_empty()
@@ -746,6 +841,7 @@ fn error_row(error: &str) -> UsageRow {
         pct: 0.0,
         detail: error.chars().take(60).collect(),
         reset: None,
+        pace: None,
     }
 }
 

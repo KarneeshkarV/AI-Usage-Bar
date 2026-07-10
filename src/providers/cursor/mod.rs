@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, CursorProviderConfig, ResetStyle};
+use crate::pace::{self, DEFAULT_WEEKLY_MINUTES};
 use crate::util::time::reset_label;
 use crate::waybar_proto::State;
 
@@ -124,6 +125,11 @@ impl CursorSnapshot {
         if let Some(line) = self.primary_line("  primary  ", style) {
             out.push(line);
         }
+        if let Some(w) = &self.primary
+            && let Some(line) = pace_line(w, Utc::now(), "    ")
+        {
+            out.push(line);
+        }
         if let Some(line) = self.on_demand_line("  on-demand") {
             out.push(line);
         }
@@ -144,6 +150,11 @@ impl CursorSnapshot {
             out.push(format!("plan: {}", format_membership(m)));
         }
         if let Some(line) = self.primary_line("primary", style) {
+            out.push(line);
+        }
+        if let Some(w) = &self.primary
+            && let Some(line) = pace_line(w, Utc::now(), "  ")
+        {
             out.push(line);
         }
         if let (Some(used), Some(limit)) = (self.plan_used_usd, self.plan_limit_usd) {
@@ -187,6 +198,17 @@ impl CursorSnapshot {
             _ => Some(format!("{label} ${used:.2}")),
         }
     }
+}
+
+fn pace_line(w: &Window, now: DateTime<Utc>, indent: &str) -> Option<String> {
+    pace::line_for_window(
+        w.used_percent,
+        w.window_minutes,
+        w.resets_at,
+        now,
+        DEFAULT_WEEKLY_MINUTES,
+        indent,
+    )
 }
 
 fn format_membership(raw: &str) -> String {
