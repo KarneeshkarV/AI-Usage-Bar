@@ -73,14 +73,20 @@ fn weekly_reset_jumped(prev: Option<&Snapshot>, next: &Snapshot, now: DateTime<U
     false
 }
 
-/// `resets_at` moved forward to a time still in the future (new window opened).
+/// Providers recompute weekly `resets_at` between polls with second-level
+/// jitter; a genuine roll-over needs the old boundary passed AND a jump far
+/// larger than jitter (same guard as the ping scheduler's `JUMP_MIN_SECS`).
+const JUMP_MIN_SECS: i64 = 3600;
+
+/// `resets_at` rolled over: the old reset has passed and the fresh one moved
+/// forward past `now` by more than jitter allows.
 fn resets_jumped_forward(
     prev: Option<DateTime<Utc>>,
     next: Option<DateTime<Utc>>,
     now: DateTime<Utc>,
 ) -> bool {
     match (prev, next) {
-        (Some(p), Some(n)) => n > p && n > now,
+        (Some(p), Some(n)) => p <= now && n > now && n - p > Duration::seconds(JUMP_MIN_SECS),
         _ => false,
     }
 }
@@ -158,6 +164,17 @@ mod tests {
         let next = snap_claude_weekly(Some(t(10, 17)), Some(t(17, 11)));
         let until = resolve_celebrating_until(Some(&prev), &next, now);
         assert_eq!(until, Some(now + Duration::seconds(CELEBRATE_SECS)));
+    }
+
+    #[test]
+    fn does_not_trigger_on_weekly_jitter() {
+        let now = t(10, 12);
+        // Weekly reset still days away; fresh fetch recomputes it 30s later.
+        let base = t(16, 11);
+        let prev = snap_claude_weekly(Some(t(10, 17)), Some(base));
+        let next = snap_claude_weekly(Some(t(10, 17)), Some(base + Duration::seconds(30)));
+        let until = resolve_celebrating_until(Some(&prev), &next, now);
+        assert!(until.is_none(), "jitter must not celebrate: {until:?}");
     }
 
     #[test]
