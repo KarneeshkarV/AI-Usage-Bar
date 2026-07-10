@@ -1,17 +1,30 @@
 # AI Usage Bar
 
-AI Usage Bar is a small Rust CLI that reports AI coding usage for Codex and Claude.
-It can run as a Waybar module, show a terminal dashboard, print status snapshots,
-and scan local session logs for recent cost.
+AI Usage Bar is a small Rust CLI that reports AI coding usage for Codex, Claude,
+Grok, Cursor, and OpenCode. It can run as a Waybar module, show a terminal
+dashboard, print status snapshots, and scan local session logs for recent cost.
 
 ## Features
 
-- Waybar JSON output with `ok`, `warn`, `crit`, `stale`, and `auth` classes.
+- Waybar JSON output with `ok`, `warn`, `crit`, `stale`, `auth`, and `incident` classes.
 - Codex usage windows, reset timing, plan metadata, and credits when available.
 - Claude session, weekly, Sonnet weekly, and extra spend data when available.
-- Local 30-day cost reports for Codex and Claude JSONL logs.
+- Grok subscription usage via the `grok` CLI (auto-detected from `~/.grok`).
+- Cursor plan usage via a manually configured session cookie.
+- OpenCode Zen balance and local 30-day spend (auto-detected from
+  `~/.local/share/opencode`).
+- Reset times as a countdown (`resets in 2h 14m`) or absolute local time
+  (`resets tomorrow, 09:05`), configurable per taste.
+- Usage pace per window: expected vs actual burn, `X% in reserve` /
+  `X% over budget`, and a projected run-out time.
+- Reset-time backfill from the cached snapshot when a fetch omits it.
+- Provider status-page polling with incident lines in the tooltip.
+- Desktop notifications (`notify-send`) on warn/crit crossings and window resets.
+- Local 30-day cost reports for Codex and Claude JSONL logs, with daily
+  sparklines in the TUI and detailed status.
 - Cached snapshots so popups and status checks avoid extra provider calls.
 - Ratatui terminal UI for a quick popup view.
+- Confetti when the weekly quota resets. Yes, really.
 
 ## Build
 
@@ -121,6 +134,10 @@ Example:
 
 ```toml
 [refresh]
+# Either pick a preset ("fast" = 60s/900s, "normal" = 300s/3600s,
+# "slow" = 900s/7200s) or set the intervals explicitly; explicit values
+# override the preset field by field.
+preset = "normal"
 interval_secs = 300
 cost_refresh_secs = 3600
 
@@ -133,11 +150,39 @@ enabled = true
 binary = "claude"
 prefer = ["cookies", "pty"]
 
+# The three providers below use mode = "auto" | "on" | "off".
+# "auto" (the default) activates only when credentials are detected, so an
+# unconfigured provider is omitted from the bar instead of showing an error.
+
+[providers.grok]
+mode = "auto"            # active when ~/.grok/auth.json exists ($GROK_HOME honored)
+# binary = "grok"
+
+[providers.cursor]
+mode = "auto"            # active when a session cookie is configured
+# Raw Cookie header from cursor.com, e.g. "WorkosCursorSessionToken=...".
+# Can also be supplied via the AI_USAGE_BAR_CURSOR_COOKIE env var.
+# cookie = "WorkosCursorSessionToken=..."
+
+[providers.opencode]
+mode = "auto"            # active when ~/.local/share/opencode/auth.json has a key
+
 [display]
 merge_text = true
 show_cost = true
 warn_threshold = 70
 crit_threshold = 90
+reset_style = "countdown"  # or "absolute": "resets 14:30" / "resets tomorrow, 09:05"
+confetti = true            # celebrate weekly quota resets for 10 minutes
+# Limit which providers appear in the Waybar text (tooltip always shows all):
+# bar_providers = ["codex", "claude"]
+
+[status]
+enabled = true             # poll provider status pages for incidents
+
+[notify]
+enabled = true             # notify-send on warn/crit threshold crossings
+on_reset = true            # and when a window resets
 ```
 
 The cached snapshot is written under the XDG cache directory:
