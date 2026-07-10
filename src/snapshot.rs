@@ -5,6 +5,7 @@ use std::io::Write;
 
 use crate::config::cache_dir;
 use crate::cost::CostReport;
+use crate::provider_status::ProviderStatus;
 use crate::providers::{
     claude::ClaudeSnapshot, codex::CodexSnapshot, cursor::CursorSnapshot, grok::GrokSnapshot,
     opencode::OpenCodeSnapshot,
@@ -25,6 +26,9 @@ pub struct Snapshot {
     #[serde(default)]
     pub opencode: Option<OpenCodeSnapshot>,
     pub cost: Option<CostReport>,
+    /// Latest statuspage.io indicators (empty when disabled or not yet polled).
+    #[serde(default)]
+    pub provider_status: Vec<ProviderStatus>,
 }
 
 impl Snapshot {
@@ -37,6 +41,7 @@ impl Snapshot {
             cursor: None,
             opencode: None,
             cost: None,
+            provider_status: Vec::new(),
         }
     }
 

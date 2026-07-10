@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 use crate::config::Config;
+use crate::provider_status;
 use crate::snapshot::Snapshot;
 
 #[derive(Serialize)]
@@ -24,6 +25,7 @@ impl WaybarLine {
             parts.push(format!("C {}%", remaining_percent(pct)));
             worst = worst.max(pct);
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
+            push_status_line(&mut tooltip, &snap.provider_status, "codex");
             state = state.combine(c.state(cfg));
         } else {
             parts.push("C —".into());
@@ -36,6 +38,7 @@ impl WaybarLine {
             parts.push(format!("Cl {}%", remaining_percent(pct)));
             worst = worst.max(pct);
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
+            push_status_line(&mut tooltip, &snap.provider_status, "claude");
             state = state.combine(c.state(cfg));
         } else {
             parts.push("Cl —".into());
@@ -58,6 +61,7 @@ impl WaybarLine {
             parts.push(format!("Cu {}%", remaining_percent(pct)));
             worst = worst.max(pct);
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
+            push_status_line(&mut tooltip, &snap.provider_status, "cursor");
             state = state.combine(c.state(cfg));
         }
 
@@ -83,6 +87,10 @@ impl WaybarLine {
             state = state.combine(State::Stale);
         }
 
+        if provider_status::any_incident(&snap.provider_status) {
+            state = state.combine(State::Incident);
+        }
+
         let text = if cfg.display.merge_text {
             parts.join(" / ")
         } else {
@@ -99,16 +107,28 @@ impl WaybarLine {
     }
 }
 
+fn push_status_line(
+    tooltip: &mut Vec<String>,
+    statuses: &[provider_status::ProviderStatus],
+    id: &str,
+) {
+    if let Some(line) = provider_status::find(statuses, id).and_then(|s| s.display_line()) {
+        tooltip.push(line);
+    }
+}
+
 fn remaining_percent(used: u8) -> u8 {
     100_u8.saturating_sub(used.min(100))
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     Ok,
     Warn,
     Crit,
     Stale,
+    /// Public statuspage incident (indicator != none). Between Stale and Warn.
+    Incident,
     Auth,
 }
 
@@ -119,6 +139,7 @@ impl State {
             State::Warn => "warn",
             State::Crit => "crit",
             State::Stale => "stale",
+            State::Incident => "incident",
             State::Auth => "auth",
         }
     }
@@ -134,14 +155,15 @@ impl State {
     }
 
     pub fn combine(self, other: State) -> State {
-        // Severity ordering: Crit > Warn > Auth > Stale > Ok
+        // Severity: Crit > Warn > Auth > Incident > Stale > Ok
         fn rank(s: State) -> u8 {
             match s {
                 State::Ok => 0,
                 State::Stale => 1,
-                State::Auth => 2,
-                State::Warn => 3,
-                State::Crit => 4,
+                State::Incident => 2,
+                State::Auth => 3,
+                State::Warn => 4,
+                State::Crit => 5,
             }
         }
         if rank(other) > rank(self) {
@@ -149,5 +171,112 @@ impl State {
         } else {
             self
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider_status::{Indicator, ProviderStatus};
+    use chrono::Utc;
+
+    #[test]
+    fn severity_ranking_includes_incident() {
+        assert_eq!(State::Ok.combine(State::Stale), State::Stale);
+        assert_eq!(State::Stale.combine(State::Incident), State::Incident);
+        assert_eq!(State::Incident.combine(State::Auth), State::Auth);
+        assert_eq!(State::Incident.combine(State::Warn), State::Warn);
+        assert_eq!(State::Incident.combine(State::Crit), State::Crit);
+        // Incident loses to anything more severe; wins over Stale/Ok.
+        assert_eq!(State::Warn.combine(State::Incident), State::Warn);
+        assert_eq!(State::Ok.combine(State::Incident), State::Incident);
+        assert_eq!(State::Incident.label(), "incident");
+    }
+
+    #[test]
+    fn waybar_class_incident_when_only_incident() {
+        let cfg = Config::default();
+        let mut snap = Snapshot::new();
+        snap.refreshed_at = Utc::now();
+        // Minimal codex so we don't land on Auth from missing providers.
+        snap.codex = Some(crate::providers::codex::CodexSnapshot {
+            account_email: None,
+            plan_type: None,
+            primary: Some(crate::providers::codex::Window {
+                used_percent: 10.0,
+                window_minutes: Some(300),
+                resets_at: None,
+            }),
+            secondary: None,
+            credits: None,
+            error: None,
+        });
+        snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
+            account_email: None,
+            plan_type: None,
+            session: Some(crate::providers::claude::Window {
+                used_percent: 5.0,
+                resets_at: None,
+            }),
+            weekly: None,
+            sonnet_weekly: None,
+            extra: None,
+            source: None,
+            error: None,
+        });
+        snap.provider_status = vec![ProviderStatus {
+            provider: "codex".into(),
+            indicator: Indicator::Minor,
+            description: "Partial outage".into(),
+        }];
+
+        let line = WaybarLine::from_snapshot(&snap, &cfg);
+        assert_eq!(line.class, "incident");
+        assert_eq!(line.alt, "incident");
+        assert!(
+            line.tooltip.contains("⚠ minor incident: Partial outage"),
+            "tooltip={}",
+            line.tooltip
+        );
+    }
+
+    #[test]
+    fn waybar_warn_beats_incident() {
+        let cfg = Config::default();
+        let mut snap = Snapshot::new();
+        snap.refreshed_at = Utc::now();
+        snap.codex = Some(crate::providers::codex::CodexSnapshot {
+            account_email: None,
+            plan_type: None,
+            primary: Some(crate::providers::codex::Window {
+                used_percent: 75.0,
+                window_minutes: Some(300),
+                resets_at: None,
+            }),
+            secondary: None,
+            credits: None,
+            error: None,
+        });
+        snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
+            account_email: None,
+            plan_type: None,
+            session: Some(crate::providers::claude::Window {
+                used_percent: 5.0,
+                resets_at: None,
+            }),
+            weekly: None,
+            sonnet_weekly: None,
+            extra: None,
+            source: None,
+            error: None,
+        });
+        snap.provider_status = vec![ProviderStatus {
+            provider: "codex".into(),
+            indicator: Indicator::Major,
+            description: "Major outage".into(),
+        }];
+
+        let line = WaybarLine::from_snapshot(&snap, &cfg);
+        assert_eq!(line.class, "warn");
     }
 }

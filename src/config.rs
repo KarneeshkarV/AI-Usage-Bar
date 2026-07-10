@@ -12,6 +12,9 @@ pub struct Config {
     pub display: DisplayConfig,
     #[serde(default)]
     pub ping: PingConfig,
+    /// Public statuspage.io incident polling (codex / claude / cursor).
+    #[serde(default)]
+    pub status: StatusConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,6 +274,24 @@ impl Default for PingConfig {
     }
 }
 
+/// Poll public status pages and surface non-`none` indicators in the bar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusConfig {
+    /// When true (default), the waybar loop refreshes status pages on a slow cadence.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for StatusConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
 pub fn config_path() -> Result<PathBuf> {
     let base = dirs::config_dir().context("no XDG config dir")?;
     Ok(base.join("ai-usage-bar").join("config.toml"))
@@ -406,5 +427,20 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.providers.opencode.mode, ProviderMode::Off);
         assert!(!cfg.providers.opencode.is_active());
+    }
+
+    #[test]
+    fn status_config_defaults_enabled() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert!(cfg.status.enabled);
+
+        let cfg: Config = toml::from_str(
+            r#"
+            [status]
+            enabled = false
+            "#,
+        )
+        .unwrap();
+        assert!(!cfg.status.enabled);
     }
 }

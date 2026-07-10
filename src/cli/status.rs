@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::config::{Config, ResetStyle};
+use crate::provider_status;
 use crate::providers::{claude, codex, cursor, grok, opencode};
 use crate::snapshot::{self, Snapshot};
 
@@ -54,11 +55,13 @@ fn print_compact(snap: &Snapshot) {
     println!("AI Usage Bar — {}", snap.refreshed_at.to_rfc3339());
     if let Some(c) = &snap.codex {
         println!("codex: {}", c.summary_line());
+        print_status_lines(snap, "codex");
     } else {
         println!("codex: (unavailable)");
     }
     if let Some(c) = &snap.claude {
         println!("claude: {}", c.summary_line());
+        print_status_lines(snap, "claude");
     } else {
         println!("claude: (unavailable)");
     }
@@ -70,6 +73,7 @@ fn print_compact(snap: &Snapshot) {
     // Cursor / OpenCode: omit when inactive.
     if let Some(c) = &snap.cursor {
         println!("cursor: {}", c.summary_line());
+        print_status_lines(snap, "cursor");
     }
     if let Some(o) = &snap.opencode {
         println!("opencode: {}", o.summary_line());
@@ -87,6 +91,7 @@ fn print_detailed(snap: &Snapshot, style: ResetStyle) {
         for line in c.detail_lines(style) {
             println!("│  {line}");
         }
+        print_status_lines_detail(snap, "codex");
     } else {
         println!("│  (unavailable)");
     }
@@ -95,6 +100,7 @@ fn print_detailed(snap: &Snapshot, style: ResetStyle) {
         for line in c.detail_lines(style) {
             println!("│  {line}");
         }
+        print_status_lines_detail(snap, "claude");
     } else {
         println!("│  (unavailable)");
     }
@@ -112,6 +118,7 @@ fn print_detailed(snap: &Snapshot, style: ResetStyle) {
             for line in c.detail_lines(style) {
                 println!("│  {line}");
             }
+            print_status_lines_detail(snap, "cursor");
         }
     }
     if snap.opencode.is_some() {
@@ -131,4 +138,22 @@ fn print_detailed(snap: &Snapshot, style: ResetStyle) {
         println!("│  (not scanned)");
     }
     println!("╰─");
+}
+
+fn print_status_lines(snap: &Snapshot, provider: &str) {
+    if let Some(line) =
+        provider_status::find(&snap.provider_status, provider).and_then(|s| s.display_line())
+    {
+        println!("{line}");
+    }
+}
+
+fn print_status_lines_detail(snap: &Snapshot, provider: &str) {
+    if let Some(line) =
+        provider_status::find(&snap.provider_status, provider).and_then(|s| s.display_line())
+    {
+        // display_line already has two-space indent; strip and re-indent for the box.
+        let body = line.trim_start();
+        println!("│  {body}");
+    }
 }

@@ -8,6 +8,7 @@ mod config;
 mod cost;
 mod pace;
 mod ping;
+mod provider_status;
 mod providers;
 mod snapshot;
 mod util;

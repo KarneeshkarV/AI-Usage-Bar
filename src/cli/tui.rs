@@ -19,6 +19,7 @@ use chrono::Utc;
 
 use crate::config::{Config, ResetStyle};
 use crate::pace::{self, DEFAULT_SESSION_MINUTES, DEFAULT_WEEKLY_MINUTES};
+use crate::provider_status;
 use crate::snapshot::{self, Snapshot};
 use crate::util::time::reset_label;
 
@@ -366,6 +367,7 @@ fn render_provider_panel(
         ProviderKind::Cursor => cursor_rows(app),
         ProviderKind::OpenCode => opencode_rows(app),
     };
+    let incident = incident_line(app, kind);
 
     if rows.is_empty() {
         let fallback = match kind {
@@ -401,15 +403,31 @@ fn render_provider_panel(
                 .and_then(|c| c.error.as_deref())
                 .unwrap_or("no data"),
         };
-        frame.render_widget(
-            Paragraph::new(Span::styled(fallback, Style::default().fg(OVERLAY0)))
-                .alignment(Alignment::Center),
-            inner,
-        );
+        if let Some(inc) = incident {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
+                .split(inner);
+            frame.render_widget(
+                Paragraph::new(Span::styled(fallback, Style::default().fg(OVERLAY0)))
+                    .alignment(Alignment::Center),
+                chunks[0],
+            );
+            frame.render_widget(
+                Paragraph::new(Span::styled(inc, Style::default().fg(YELLOW))),
+                chunks[1],
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(Span::styled(fallback, Style::default().fg(OVERLAY0)))
+                    .alignment(Alignment::Center),
+                inner,
+            );
+        }
         return;
     }
 
-    let row_constraints = rows
+    let mut row_constraints = rows
         .iter()
         .map(|r| {
             if r.pace.is_some() {
@@ -418,8 +436,11 @@ fn render_provider_panel(
                 Constraint::Length(4)
             }
         })
-        .chain([Constraint::Min(0)])
         .collect::<Vec<_>>();
+    if incident.is_some() {
+        row_constraints.push(Constraint::Length(1));
+    }
+    row_constraints.push(Constraint::Min(0));
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -429,6 +450,25 @@ fn render_provider_panel(
     for (idx, row) in rows.iter().enumerate() {
         render_usage_row(frame, chunks[idx], row);
     }
+    if let Some(inc) = incident {
+        frame.render_widget(
+            Paragraph::new(Span::styled(inc, Style::default().fg(YELLOW))),
+            chunks[rows.len()],
+        );
+    }
+}
+
+fn incident_line(app: &App, kind: ProviderKind) -> Option<String> {
+    let id = match kind {
+        ProviderKind::Codex => "codex",
+        ProviderKind::Claude => "claude",
+        ProviderKind::Cursor => "cursor",
+        ProviderKind::Grok | ProviderKind::OpenCode => return None,
+    };
+    let snap = app.snapshot.as_ref()?;
+    provider_status::find(&snap.provider_status, id)
+        .and_then(|s| s.display_line())
+        .map(|l| l.trim_start().to_string())
 }
 
 struct UsageRow {

@@ -7,6 +7,7 @@ use crate::backfill;
 use crate::config::Config;
 use crate::cost;
 use crate::ping;
+use crate::provider_status::{self, ProviderStatus};
 use crate::providers::{claude, codex, cursor, grok, opencode};
 use crate::snapshot::{self, Snapshot};
 use crate::waybar_proto::WaybarLine;
@@ -21,7 +22,10 @@ pub async fn run() -> Result<()> {
 
     let mut tick = interval(Duration::from_secs(cfg.refresh.interval_secs.max(30)));
     let mut cost_tick = interval(Duration::from_secs(cfg.refresh.cost_refresh_secs.max(60)));
+    let mut status_tick = interval(Duration::from_secs(provider_status::POLL_INTERVAL_SECS));
     let mut last_cost: Option<cost::CostReport> = None;
+    let mut last_status: Vec<ProviderStatus> = Vec::new();
+    let mut status_ready = false;
     let mut last_ping_claude: Option<DateTime<Utc>> = None;
     let mut last_ping_codex: Option<DateTime<Utc>> = None;
     let mut prev_reset_claude: Option<DateTime<Utc>> = None;
@@ -68,6 +72,18 @@ pub async fn run() -> Result<()> {
             last_cost = cost::scan_both().await.ok();
         }
         snap.cost = last_cost.clone();
+
+        // Status pages: first poll immediately, then every ~15 min.
+        if cfg.status.enabled && !status_ready {
+            last_status = provider_status::refresh_all(&cfg, &last_status).await;
+            status_ready = true;
+        }
+        snap.provider_status = if cfg.status.enabled {
+            last_status.clone()
+        } else {
+            Vec::new()
+        };
+
         let now = chrono::Utc::now();
         snap.refreshed_at = now;
 
@@ -117,6 +133,12 @@ pub async fn run() -> Result<()> {
             _ = tick.tick() => {},
             _ = cost_tick.tick() => {
                 last_cost = cost::scan_both().await.ok();
+            }
+            _ = status_tick.tick() => {
+                if cfg.status.enabled {
+                    last_status = provider_status::refresh_all(&cfg, &last_status).await;
+                    status_ready = true;
+                }
             }
         }
     }
