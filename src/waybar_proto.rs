@@ -27,9 +27,8 @@ impl WaybarLine {
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
             push_status_line(&mut tooltip, &snap.provider_status, "codex");
             if on_bar("codex") {
-                let pct = c.worst_percent().unwrap_or(0);
-                parts.push(format!("C {}%", remaining_percent(pct)));
-                worst = worst.max(pct);
+                parts.push(percent_segment("C", c.worst_percent()));
+                worst = worst.max(c.worst_percent().unwrap_or(0));
                 state = state.combine(c.state(cfg));
             }
         } else if on_bar("codex") {
@@ -44,9 +43,8 @@ impl WaybarLine {
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
             push_status_line(&mut tooltip, &snap.provider_status, "claude");
             if on_bar("claude") {
-                let pct = c.worst_percent().unwrap_or(0);
-                parts.push(format!("Cl {}%", remaining_percent(pct)));
-                worst = worst.max(pct);
+                parts.push(percent_segment("Cl", c.worst_percent()));
+                worst = worst.max(c.worst_percent().unwrap_or(0));
                 state = state.combine(c.state(cfg));
             }
         } else if on_bar("claude") {
@@ -61,9 +59,8 @@ impl WaybarLine {
         if let Some(g) = &snap.grok {
             tooltip.extend(g.tooltip_lines(cfg.display.reset_style));
             if on_bar("grok") {
-                let pct = g.worst_percent().unwrap_or(0);
-                parts.push(format!("G {}%", remaining_percent(pct)));
-                worst = worst.max(pct);
+                parts.push(percent_segment("G", g.worst_percent()));
+                worst = worst.max(g.worst_percent().unwrap_or(0));
                 state = state.combine(g.state(cfg));
             }
         }
@@ -73,9 +70,8 @@ impl WaybarLine {
             tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
             push_status_line(&mut tooltip, &snap.provider_status, "cursor");
             if on_bar("cursor") {
-                let pct = c.worst_percent().unwrap_or(0);
-                parts.push(format!("Cu {}%", remaining_percent(pct)));
-                worst = worst.max(pct);
+                parts.push(percent_segment("Cu", c.worst_percent()));
+                worst = worst.max(c.worst_percent().unwrap_or(0));
                 state = state.combine(c.state(cfg));
             }
         }
@@ -147,6 +143,15 @@ fn push_status_line(
 
 fn remaining_percent(used: u8) -> u8 {
     100_u8.saturating_sub(used.min(100))
+}
+
+/// Bar segment for a percent-based provider. A snapshot without a usable
+/// window renders as `—` rather than pretending 100% is available.
+fn percent_segment(prefix: &str, worst_used: Option<u8>) -> String {
+    match worst_used {
+        Some(p) => format!("{prefix} {}%", remaining_percent(p)),
+        None => format!("{prefix} —"),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -266,6 +271,43 @@ mod tests {
             "tooltip={}",
             line.tooltip
         );
+    }
+
+    #[test]
+    fn missing_window_shows_dash_not_full_availability() {
+        let cfg = Config::default();
+        let mut snap = Snapshot::new();
+        snap.refreshed_at = Utc::now();
+        // Provider responded but omitted its usage window entirely.
+        snap.codex = Some(crate::providers::codex::CodexSnapshot {
+            account_email: None,
+            plan_type: None,
+            primary: None,
+            secondary: None,
+            credits: None,
+            error: None,
+        });
+        snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
+            account_email: None,
+            plan_type: None,
+            session: Some(crate::providers::claude::Window {
+                used_percent: 5.0,
+                resets_at: None,
+            }),
+            weekly: None,
+            sonnet_weekly: None,
+            extra: None,
+            source: None,
+            error: None,
+        });
+
+        let line = WaybarLine::from_snapshot(&snap, &cfg);
+        assert!(
+            line.text.contains("C —"),
+            "windowless codex must show a dash: {}",
+            line.text
+        );
+        assert!(!line.text.contains("C 100%"), "text={}", line.text);
     }
 
     #[test]
