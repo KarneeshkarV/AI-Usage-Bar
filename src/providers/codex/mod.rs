@@ -102,7 +102,12 @@ impl CodexSnapshot {
                 if c.unlimited { " (unlimited)" } else { "" }
             ));
         }
-        out.extend(reset_credit_lines(self.reset_credits.as_ref(), style, "  ", false));
+        out.extend(reset_credit_lines(
+            self.reset_credits.as_ref(),
+            style,
+            "  ",
+            false,
+        ));
         if let Some(e) = &self.error {
             out.push(format!("  error: {e}"));
         }
@@ -131,7 +136,12 @@ impl CodexSnapshot {
                 c.balance.clone().unwrap_or_default()
             ));
         }
-        out.extend(reset_credit_lines(self.reset_credits.as_ref(), style, "", true));
+        out.extend(reset_credit_lines(
+            self.reset_credits.as_ref(),
+            style,
+            "",
+            true,
+        ));
         if let Some(e) = &self.error {
             out.push(format!("error: {e}"));
         }
@@ -197,10 +207,7 @@ fn reset_credit_lines(
             }
         }
     } else if let Some(next) = rc.credits.iter().find_map(|c| c.expires_at) {
-        out.push(format!(
-            "{indent}  next {}",
-            expires_label(next, style)
-        ));
+        out.push(format!("{indent}  next {}", expires_label(next, style)));
     }
 
     out
@@ -257,10 +264,10 @@ async fn enrich_reset_credits(snap: &mut CodexSnapshot) {
 
 #[cfg(test)]
 mod display_tests {
-    use super::*;
     use super::reset_credits::ResetCredit;
-    use chrono::TimeZone;
+    use super::*;
     use crate::config::ResetStyle;
+    use chrono::TimeZone;
 
     fn utc(y: i32, m: u32, d: u32, h: u32, min: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(y, m, d, h, min, 0).unwrap()
@@ -294,15 +301,13 @@ mod display_tests {
             error: None,
         };
         let lines = snap.detail_lines(ResetStyle::Absolute);
-        assert!(lines.iter().any(|l| l.contains("reset credits: 2 available")));
-        assert!(lines.iter().any(|l| l.contains("expires")));
-        assert_eq!(
+        assert!(
             lines
                 .iter()
-                .filter(|l| l.contains("Full reset"))
-                .count(),
-            2
+                .any(|l| l.contains("reset credits: 2 available"))
         );
+        assert!(lines.iter().any(|l| l.contains("expires")));
+        assert_eq!(lines.iter().filter(|l| l.contains("Full reset")).count(), 2);
     }
 
     #[test]
@@ -325,7 +330,11 @@ mod display_tests {
             error: None,
         };
         let lines = snap.tooltip_lines(ResetStyle::Countdown);
-        assert!(lines.iter().any(|l| l.contains("reset credits: 3 available")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("reset credits: 3 available"))
+        );
         assert!(lines.iter().any(|l| l.contains("next")));
         assert!(lines.iter().any(|l| l.contains("expires")));
     }

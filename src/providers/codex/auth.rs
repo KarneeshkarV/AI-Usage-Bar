@@ -43,9 +43,7 @@ pub fn read_tokens() -> Result<CodexTokens> {
     let raw = std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
     let auth: AuthFile =
         serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
-    let tokens = auth
-        .tokens
-        .context("no tokens block in Codex auth.json")?;
+    let tokens = auth.tokens.context("no tokens block in Codex auth.json")?;
     let access_token = tokens
         .access_token
         .filter(|t| !t.is_empty())

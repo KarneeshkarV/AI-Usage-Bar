@@ -75,7 +75,10 @@ pub async fn fetch() -> Result<ResetCreditsSnapshot> {
             .header("ChatGPT-Account-ID", account_id);
     }
 
-    let resp = req.send().await.map_err(|e| anyhow!("reset-credits: {e}"))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| anyhow!("reset-credits: {e}"))?;
     let status = resp.status();
     let body = resp
         .text()
