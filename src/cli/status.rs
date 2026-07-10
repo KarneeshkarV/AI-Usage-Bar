@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::config::Config;
+use crate::config::{Config, ResetStyle};
 use crate::providers::{claude, codex};
 use crate::snapshot::{self, Snapshot};
 
@@ -12,8 +12,12 @@ pub async fn run(detailed: bool) -> Result<()> {
         _ => one_shot().await?,
     };
 
+    let style = Config::load_or_default()
+        .map(|c| c.display.reset_style)
+        .unwrap_or_default();
+
     if detailed {
-        print_detailed(&snap);
+        print_detailed(&snap, style);
     } else {
         print_compact(&snap);
     }
@@ -51,12 +55,12 @@ fn print_compact(snap: &Snapshot) {
     }
 }
 
-fn print_detailed(snap: &Snapshot) {
+fn print_detailed(snap: &Snapshot, style: ResetStyle) {
     println!("╭─ AI Usage Bar — usage snapshot");
     println!("│  refreshed: {}", snap.refreshed_at.to_rfc3339());
     println!("├─ Codex");
     if let Some(c) = &snap.codex {
-        for line in c.detail_lines() {
+        for line in c.detail_lines(style) {
             println!("│  {line}");
         }
     } else {
@@ -64,7 +68,7 @@ fn print_detailed(snap: &Snapshot) {
     }
     println!("├─ Claude");
     if let Some(c) = &snap.claude {
-        for line in c.detail_lines() {
+        for line in c.detail_lines(style) {
             println!("│  {line}");
         }
     } else {

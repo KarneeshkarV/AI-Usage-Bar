@@ -27,8 +27,8 @@ pub async fn fetch(token: &str) -> Result<ClaudeData> {
         Err(FetchErr::Http(e)) => return Err(e),
     };
 
-    let parsed: RawUsage = serde_json::from_str(&raw)
-        .map_err(|e| anyhow!("parse {ENDPOINT} body: {e}"))?;
+    let parsed: RawUsage =
+        serde_json::from_str(&raw).map_err(|e| anyhow!("parse {ENDPOINT} body: {e}"))?;
     Ok(ClaudeData {
         account_email: None,
         plan_type: None,
