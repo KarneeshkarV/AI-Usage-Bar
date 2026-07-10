@@ -10,8 +10,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::config::{ClaudeProviderConfig, Config};
-use crate::util::time::until;
+use crate::config::{ClaudeProviderConfig, Config, ResetStyle};
+use crate::util::time::reset_label;
 use crate::waybar_proto::State;
 
 /// Skip the HTTP call once we are within this many ms of expiry — the server
@@ -75,7 +75,7 @@ impl ClaudeSnapshot {
         }
     }
 
-    pub fn tooltip_lines(&self) -> Vec<String> {
+    pub fn tooltip_lines(&self, style: ResetStyle) -> Vec<String> {
         let mut out = Vec::new();
         let mut header = String::from("Claude");
         if let Some(plan) = &self.plan_type {
@@ -84,13 +84,13 @@ impl ClaudeSnapshot {
         out.push(header);
 
         if let Some(w) = &self.session {
-            out.push(window_line("  session", w));
+            out.push(window_line("  session", w, style));
         }
         if let Some(w) = &self.weekly {
-            out.push(window_line("  weekly", w));
+            out.push(window_line("  weekly", w, style));
         }
         if let Some(w) = &self.sonnet_weekly {
-            out.push(window_line("  sonnet", w));
+            out.push(window_line("  sonnet", w, style));
         }
         if let Some(e) = &self.extra {
             out.push(format!(
@@ -104,7 +104,7 @@ impl ClaudeSnapshot {
         out
     }
 
-    pub fn detail_lines(&self) -> Vec<String> {
+    pub fn detail_lines(&self, style: ResetStyle) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(email) = &self.account_email {
             out.push(format!("account: {email}"));
@@ -116,13 +116,13 @@ impl ClaudeSnapshot {
             out.push(format!("source: {src}"));
         }
         if let Some(w) = &self.session {
-            out.push(window_line("session", w));
+            out.push(window_line("session", w, style));
         }
         if let Some(w) = &self.weekly {
-            out.push(window_line("weekly", w));
+            out.push(window_line("weekly", w, style));
         }
         if let Some(w) = &self.sonnet_weekly {
-            out.push(window_line("sonnet (weekly)", w));
+            out.push(window_line("sonnet (weekly)", w, style));
         }
         if let Some(e) = &self.extra {
             let pct = if e.limit_usd > 0.0 {
@@ -142,9 +142,9 @@ impl ClaudeSnapshot {
     }
 }
 
-fn window_line(label: &str, w: &Window) -> String {
+fn window_line(label: &str, w: &Window, style: ResetStyle) -> String {
     let resets = match w.resets_at {
-        Some(t) => format!(" (resets in {})", until(t)),
+        Some(t) => format!(" ({})", reset_label(t, style)),
         None => String::new(),
     };
     format!("{label}: {:.1}%{resets}", w.used_percent)

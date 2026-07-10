@@ -5,8 +5,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::config::{CodexProviderConfig, Config};
-use crate::util::time::until;
+use crate::config::{CodexProviderConfig, Config, ResetStyle};
+use crate::util::time::reset_label;
 use crate::waybar_proto::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +53,7 @@ impl CodexSnapshot {
         }
     }
 
-    pub fn tooltip_lines(&self) -> Vec<String> {
+    pub fn tooltip_lines(&self, style: ResetStyle) -> Vec<String> {
         let mut out = Vec::new();
         let mut header = String::from("Codex");
         if let Some(plan) = &self.plan_type {
@@ -61,7 +61,10 @@ impl CodexSnapshot {
         }
         out.push(header);
         if let Some(w) = &self.primary {
-            out.push(window_line("  primary", w));
+            out.push(window_line("  primary", w, style));
+        }
+        if let Some(w) = &self.secondary {
+            out.push(window_line("  secondary", w, style));
         }
         if let Some(c) = &self.credits
             && c.has_credits
@@ -78,7 +81,7 @@ impl CodexSnapshot {
         out
     }
 
-    pub fn detail_lines(&self) -> Vec<String> {
+    pub fn detail_lines(&self, style: ResetStyle) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(email) = &self.account_email {
             out.push(format!("account: {email}"));
@@ -87,10 +90,10 @@ impl CodexSnapshot {
             out.push(format!("plan: {plan}"));
         }
         if let Some(w) = &self.primary {
-            out.push(window_line("primary", w));
+            out.push(window_line("primary", w, style));
         }
         if let Some(w) = &self.secondary {
-            out.push(window_line("secondary", w));
+            out.push(window_line("secondary", w, style));
         }
         if let Some(c) = &self.credits {
             out.push(format!(
@@ -107,9 +110,9 @@ impl CodexSnapshot {
     }
 }
 
-fn window_line(label: &str, w: &Window) -> String {
+fn window_line(label: &str, w: &Window, style: ResetStyle) -> String {
     let resets = match w.resets_at {
-        Some(t) => format!(" (resets in {})", until(t)),
+        Some(t) => format!(" ({})", reset_label(t, style)),
         None => String::new(),
     };
     let dur = w

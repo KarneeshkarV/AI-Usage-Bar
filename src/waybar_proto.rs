@@ -23,7 +23,7 @@ impl WaybarLine {
             let pct = c.worst_percent().unwrap_or(0);
             parts.push(format!("C {}%", remaining_percent(pct)));
             worst = worst.max(pct);
-            tooltip.extend(c.tooltip_lines());
+            tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
             state = state.combine(c.state(cfg));
         } else {
             parts.push("C —".into());
@@ -35,7 +35,7 @@ impl WaybarLine {
             let pct = c.worst_percent().unwrap_or(0);
             parts.push(format!("Cl {}%", remaining_percent(pct)));
             worst = worst.max(pct);
-            tooltip.extend(c.tooltip_lines());
+            tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
             state = state.combine(c.state(cfg));
         } else {
             parts.push("Cl —".into());

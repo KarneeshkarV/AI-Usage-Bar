@@ -69,12 +69,26 @@ impl Default for ClaudeProviderConfig {
     }
 }
 
+/// How usage-window reset times are rendered in tooltips, TUI, and status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ResetStyle {
+    /// Relative countdown, e.g. `in 2h 14m` / `now`.
+    #[default]
+    Countdown,
+    /// Local absolute time, e.g. `14:30` / `tomorrow, 14:30` / `Feb 3, 14:30`.
+    Absolute,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisplayConfig {
     pub merge_text: bool,
     pub show_cost: bool,
     pub warn_threshold: u8,
     pub crit_threshold: u8,
+    /// Countdown vs absolute local time for reset phrasing.
+    #[serde(default)]
+    pub reset_style: ResetStyle,
 }
 
 impl Default for DisplayConfig {
@@ -84,6 +98,7 @@ impl Default for DisplayConfig {
             show_cost: true,
             warn_threshold: 70,
             crit_threshold: 90,
+            reset_style: ResetStyle::Countdown,
         }
     }
 }
@@ -140,5 +155,45 @@ impl Config {
         let raw = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
         let cfg: Config = toml::from_str(&raw).with_context(|| format!("parse {}", p.display()))?;
         Ok(cfg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_style_defaults_when_absent() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.display.reset_style, ResetStyle::Countdown);
+
+        let cfg: Config = toml::from_str(
+            r#"
+            [display]
+            merge_text = false
+            show_cost = false
+            warn_threshold = 50
+            crit_threshold = 80
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.display.reset_style, ResetStyle::Countdown);
+        assert!(!cfg.display.merge_text);
+    }
+
+    #[test]
+    fn reset_style_parses_absolute() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [display]
+            merge_text = true
+            show_cost = true
+            warn_threshold = 70
+            crit_threshold = 90
+            reset_style = "absolute"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.display.reset_style, ResetStyle::Absolute);
     }
 }

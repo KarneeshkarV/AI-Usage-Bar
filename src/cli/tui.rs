@@ -15,8 +15,9 @@ use ratatui::symbols;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 
+use crate::config::{Config, ResetStyle};
 use crate::snapshot::{self, Snapshot};
-use crate::util::time::until;
+use crate::util::time::reset_label;
 
 // Catppuccin Mocha
 const BASE: Color = Color::Rgb(24, 24, 37);
@@ -35,16 +36,21 @@ struct App {
     read_error: Option<String>,
     poll_interval: Duration,
     next_poll: Instant,
+    reset_style: ResetStyle,
 }
 
 impl App {
     fn new(poll_secs: u64) -> Self {
         let interval = Duration::from_secs(poll_secs.clamp(1, 30));
+        let reset_style = Config::load_or_default()
+            .map(|c| c.display.reset_style)
+            .unwrap_or_default();
         let mut app = Self {
             snapshot: None,
             read_error: None,
             poll_interval: interval,
             next_poll: Instant::now(),
+            reset_style,
         };
         app.refresh();
         app
@@ -401,7 +407,7 @@ fn codex_rows(app: &App) -> Vec<UsageRow> {
                 .window_minutes
                 .map(|m| format!("{}h window", (m / 60).max(1)))
                 .unwrap_or_else(|| "session window".into()),
-            reset: w.resets_at.map(|t| format!("resets in {}", until(t))),
+            reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
         });
     }
     if let Some(w) = &codex.secondary {
@@ -412,7 +418,7 @@ fn codex_rows(app: &App) -> Vec<UsageRow> {
                 .window_minutes
                 .map(|m| format!("{}h window", (m / 60).max(1)))
                 .unwrap_or_else(|| "secondary window".into()),
-            reset: w.resets_at.map(|t| format!("resets in {}", until(t))),
+            reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
         });
     }
     if let Some(c) = &codex.credits {
@@ -455,7 +461,7 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
                 .source
                 .clone()
                 .unwrap_or_else(|| "current session".into()),
-            reset: w.resets_at.map(|t| format!("resets in {}", until(t))),
+            reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
         });
     }
     if let Some(w) = &claude.weekly {
@@ -463,7 +469,7 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
             label: "Weekly".into(),
             pct: w.used_percent,
             detail: "weekly window".into(),
-            reset: w.resets_at.map(|t| format!("resets in {}", until(t))),
+            reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
         });
     }
     if let Some(w) = &claude.sonnet_weekly {
@@ -471,7 +477,7 @@ fn claude_rows(app: &App) -> Vec<UsageRow> {
             label: "Sonnet".into(),
             pct: w.used_percent,
             detail: "sonnet weekly".into(),
-            reset: w.resets_at.map(|t| format!("resets in {}", until(t))),
+            reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
         });
     }
     if let Some(extra) = &claude.extra {
