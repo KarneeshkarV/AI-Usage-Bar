@@ -8,11 +8,17 @@ use super::{CodexSnapshot, Credits, Window};
 
 pub async fn fetch(rpc: &mut RpcClient) -> Result<CodexSnapshot> {
     let account = rpc
-        .call("account/read", json!({}), Duration::from_secs(3))
+        .call("account/read", json!({}), Duration::from_secs(5))
         .await
         .ok();
+    // This call proxies a network round-trip to the ChatGPT backend; ~2s is
+    // typical even warm, so 3s flaked under any latency.
     let rate = rpc
-        .call("account/rateLimits/read", json!({}), Duration::from_secs(3))
+        .call(
+            "account/rateLimits/read",
+            json!({}),
+            Duration::from_secs(15),
+        )
         .await?;
 
     let (email, plan) = account
