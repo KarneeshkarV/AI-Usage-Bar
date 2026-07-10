@@ -6,6 +6,7 @@ use tokio::time::{Duration, interval};
 use crate::backfill;
 use crate::config::Config;
 use crate::cost;
+use crate::notify::Notifier;
 use crate::ping;
 use crate::provider_status::{self, ProviderStatus};
 use crate::providers::{claude, codex, cursor, grok, opencode};
@@ -19,6 +20,7 @@ pub async fn run() -> Result<()> {
     let mut grok_client = grok::Client::new(cfg.providers.grok.clone());
     let mut cursor_client = cursor::Client::new(cfg.providers.cursor.clone());
     let mut opencode_client = opencode::Client::new(cfg.providers.opencode.clone());
+    let mut notifier = Notifier::from_config(&cfg);
 
     let mut tick = interval(Duration::from_secs(cfg.refresh.interval_secs.max(30)));
     let mut cost_tick = interval(Duration::from_secs(cfg.refresh.cost_refresh_secs.max(60)));
@@ -90,6 +92,9 @@ pub async fn run() -> Result<()> {
         // Reuse still-future reset times from the previous snapshot when a fresh
         // poll omits them (API flakiness / partial responses).
         backfill::backfill_snapshot(&mut snap, prev_snap.as_ref(), now);
+
+        // Desktop notifications (waybar only): compare against previous poll.
+        notifier.process(prev_snap.as_ref(), &snap).await;
 
         // Atomic snapshot write so `ai-usage-bar status` can read it
         if let Err(e) = snapshot::write(&snap) {

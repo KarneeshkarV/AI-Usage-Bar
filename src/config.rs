@@ -15,6 +15,9 @@ pub struct Config {
     /// Public statuspage.io incident polling (codex / claude / cursor).
     #[serde(default)]
     pub status: StatusConfig,
+    /// Desktop notifications via `notify-send` (waybar loop only).
+    #[serde(default)]
+    pub notify: NotifyConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,6 +291,26 @@ impl Default for StatusConfig {
     }
 }
 
+/// Desktop notifications for quota thresholds and window resets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotifyConfig {
+    /// Master switch (default on). Also requires `notify-send` on PATH.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Emit a low-urgency notification when a window above warn resets.
+    #[serde(default = "default_true")]
+    pub on_reset: bool,
+}
+
+impl Default for NotifyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            on_reset: true,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -442,5 +465,23 @@ mod tests {
         )
         .unwrap();
         assert!(!cfg.status.enabled);
+    }
+
+    #[test]
+    fn notify_config_defaults() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert!(cfg.notify.enabled);
+        assert!(cfg.notify.on_reset);
+
+        let cfg: Config = toml::from_str(
+            r#"
+            [notify]
+            enabled = false
+            on_reset = false
+            "#,
+        )
+        .unwrap();
+        assert!(!cfg.notify.enabled);
+        assert!(!cfg.notify.on_reset);
     }
 }
