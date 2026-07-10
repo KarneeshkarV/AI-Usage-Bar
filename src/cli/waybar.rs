@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use std::io::Write;
 use tokio::time::{Duration, interval};
 
+use crate::backfill;
 use crate::config::Config;
 use crate::cost;
 use crate::ping;
@@ -25,6 +26,8 @@ pub async fn run() -> Result<()> {
     let mut last_ping_codex: Option<DateTime<Utc>> = None;
     let mut prev_reset_claude: Option<DateTime<Utc>> = None;
     let mut prev_reset_codex: Option<DateTime<Utc>> = None;
+    // Seed from disk so the first poll can still reuse a still-future cached reset.
+    let mut prev_snap: Option<Snapshot> = snapshot::read().ok();
 
     let stdout = std::io::stdout();
 
@@ -65,12 +68,18 @@ pub async fn run() -> Result<()> {
             last_cost = cost::scan_both().await.ok();
         }
         snap.cost = last_cost.clone();
-        snap.refreshed_at = chrono::Utc::now();
+        let now = chrono::Utc::now();
+        snap.refreshed_at = now;
+
+        // Reuse still-future reset times from the previous snapshot when a fresh
+        // poll omits them (API flakiness / partial responses).
+        backfill::backfill_snapshot(&mut snap, prev_snap.as_ref(), now);
 
         // Atomic snapshot write so `ai-usage-bar status` can read it
         if let Err(e) = snapshot::write(&snap) {
             tracing::warn!(error = %e, "snapshot write failed");
         }
+        prev_snap = Some(snap.clone());
 
         // Anchor the next session window with a headless ping near its reset.
         if cfg.ping.enabled {
