@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::config::{Config, ResetStyle};
-use crate::providers::{claude, codex, cursor, grok};
+use crate::providers::{claude, codex, cursor, grok, opencode};
 use crate::snapshot::{self, Snapshot};
 
 pub async fn run(detailed: bool) -> Result<()> {
@@ -31,17 +31,20 @@ async fn one_shot() -> Result<Snapshot> {
     let mut claude_client = claude::Client::new(cfg.providers.claude.clone());
     let mut grok_client = grok::Client::new(cfg.providers.grok.clone());
     let mut cursor_client = cursor::Client::new(cfg.providers.cursor.clone());
+    let mut opencode_client = opencode::Client::new(cfg.providers.opencode.clone());
 
-    let (codex_res, claude_res, grok_res, cursor_res) = tokio::join!(
+    let (codex_res, claude_res, grok_res, cursor_res, opencode_res) = tokio::join!(
         codex_client.refresh(),
         claude_client.refresh(),
         grok_client.refresh(),
         cursor_client.refresh(),
+        opencode_client.refresh(),
     );
     snap.codex = codex_res.ok().flatten();
     snap.claude = claude_res.ok().flatten();
     snap.grok = grok_res.ok().flatten();
     snap.cursor = cursor_res.ok().flatten();
+    snap.opencode = opencode_res.ok().flatten();
     snap.cost = crate::cost::scan_both().await.ok();
     snap.refreshed_at = chrono::Utc::now();
     Ok(snap)
@@ -64,9 +67,12 @@ fn print_compact(snap: &Snapshot) {
     } else {
         println!("grok: (unavailable)");
     }
-    // Cursor: omit when inactive (no cookie / mode off).
+    // Cursor / OpenCode: omit when inactive.
     if let Some(c) = &snap.cursor {
         println!("cursor: {}", c.summary_line());
+    }
+    if let Some(o) = &snap.opencode {
+        println!("opencode: {}", o.summary_line());
     }
     if let Some(cost) = &snap.cost {
         println!("30d cost: ${:.2}", cost.total_usd);
@@ -104,6 +110,14 @@ fn print_detailed(snap: &Snapshot, style: ResetStyle) {
         println!("├─ Cursor");
         if let Some(c) = &snap.cursor {
             for line in c.detail_lines(style) {
+                println!("│  {line}");
+            }
+        }
+    }
+    if snap.opencode.is_some() {
+        println!("├─ OpenCode");
+        if let Some(o) = &snap.opencode {
+            for line in o.detail_lines(style) {
                 println!("│  {line}");
             }
         }

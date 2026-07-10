@@ -7,6 +7,7 @@ use crate::config::cache_dir;
 use crate::cost::CostReport;
 use crate::providers::{
     claude::ClaudeSnapshot, codex::CodexSnapshot, cursor::CursorSnapshot, grok::GrokSnapshot,
+    opencode::OpenCodeSnapshot,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +21,9 @@ pub struct Snapshot {
     /// Present only when the Cursor provider is active and a refresh was attempted.
     #[serde(default)]
     pub cursor: Option<CursorSnapshot>,
+    /// Present only when the OpenCode provider is active and a refresh was attempted.
+    #[serde(default)]
+    pub opencode: Option<OpenCodeSnapshot>,
     pub cost: Option<CostReport>,
 }
 
@@ -31,6 +35,7 @@ impl Snapshot {
             claude: None,
             grok: None,
             cursor: None,
+            opencode: None,
             cost: None,
         }
     }

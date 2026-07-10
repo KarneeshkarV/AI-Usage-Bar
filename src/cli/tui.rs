@@ -202,9 +202,17 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
         .map(|p| format!("{p}%"))
         .unwrap_or_else(|| "—".into());
 
+    let opencode_bal = app
+        .snapshot
+        .as_ref()
+        .and_then(|s| s.opencode.as_ref())
+        .and_then(|o| o.balance_usd)
+        .map(|b| format!("${b:.2}"))
+        .unwrap_or_else(|| "—".into());
+
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
         .split(area);
 
     frame.render_widget(
@@ -233,6 +241,11 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
                 cursor_pct,
                 Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
             ),
+            Span::styled("  oc ", Style::default().fg(OVERLAY0)),
+            Span::styled(
+                opencode_bal,
+                Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
+            ),
         ]))
         .alignment(Alignment::Right),
         cols[1],
@@ -245,27 +258,40 @@ enum ProviderKind {
     Claude,
     Grok,
     Cursor,
+    OpenCode,
 }
 
 fn render_providers(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
-    // Four columns with 1-cell gaps
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(24),
-            Constraint::Length(1),
-            Constraint::Percentage(24),
-            Constraint::Length(1),
-            Constraint::Percentage(24),
-            Constraint::Length(1),
-            Constraint::Percentage(25),
-        ])
+    // Two rows of providers so five panels stay readable.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    render_provider_panel(frame, cols[0], app, ProviderKind::Codex);
-    render_provider_panel(frame, cols[2], app, ProviderKind::Claude);
-    render_provider_panel(frame, cols[4], app, ProviderKind::Grok);
-    render_provider_panel(frame, cols[6], app, ProviderKind::Cursor);
+    let top = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(33),
+            Constraint::Length(1),
+            Constraint::Percentage(33),
+            Constraint::Length(1),
+            Constraint::Percentage(34),
+        ])
+        .split(rows[0]);
+    let bot = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50),
+            Constraint::Length(1),
+            Constraint::Percentage(50),
+        ])
+        .split(rows[1]);
+
+    render_provider_panel(frame, top[0], app, ProviderKind::Codex);
+    render_provider_panel(frame, top[2], app, ProviderKind::Claude);
+    render_provider_panel(frame, top[4], app, ProviderKind::Grok);
+    render_provider_panel(frame, bot[0], app, ProviderKind::Cursor);
+    render_provider_panel(frame, bot[2], app, ProviderKind::OpenCode);
 }
 
 fn render_provider_panel(
@@ -279,6 +305,7 @@ fn render_provider_panel(
         ProviderKind::Claude => ("CLAUDE", BLUE),
         ProviderKind::Grok => ("GROK", GREEN),
         ProviderKind::Cursor => ("CURSOR", YELLOW),
+        ProviderKind::OpenCode => ("OPENCODE", MAUVE),
     };
 
     let plan_suffix = match kind {
@@ -304,6 +331,7 @@ fn render_provider_panel(
             .and_then(|c| c.membership_type.as_ref())
             .map(|p| format!(" · {p}"))
             .unwrap_or_default(),
+        ProviderKind::OpenCode => String::new(),
     };
 
     let block = Block::default()
@@ -333,6 +361,7 @@ fn render_provider_panel(
         ProviderKind::Codex => codex_rows(app),
         ProviderKind::Grok => grok_rows(app),
         ProviderKind::Cursor => cursor_rows(app),
+        ProviderKind::OpenCode => opencode_rows(app),
     };
 
     if rows.is_empty() {
@@ -360,6 +389,12 @@ fn render_provider_panel(
                 .snapshot
                 .as_ref()
                 .and_then(|s| s.cursor.as_ref())
+                .and_then(|c| c.error.as_deref())
+                .unwrap_or("no data"),
+            ProviderKind::OpenCode => app
+                .snapshot
+                .as_ref()
+                .and_then(|s| s.opencode.as_ref())
                 .and_then(|c| c.error.as_deref())
                 .unwrap_or("no data"),
         };
@@ -666,6 +701,39 @@ fn cursor_rows(app: &App) -> Vec<UsageRow> {
     }
     if rows.is_empty()
         && let Some(e) = &cursor.error
+    {
+        rows.push(error_row(e));
+    }
+    rows
+}
+
+fn opencode_rows(app: &App) -> Vec<UsageRow> {
+    let Some(snap) = &app.snapshot else {
+        return Vec::new();
+    };
+    let Some(oc) = &snap.opencode else {
+        return Vec::new();
+    };
+
+    let mut rows = Vec::new();
+    if let Some(b) = oc.balance_usd {
+        rows.push(UsageRow {
+            label: "Balance".into(),
+            pct: if b <= 0.0 { 100.0 } else { 0.0 },
+            detail: format!("${b:.2}"),
+            reset: None,
+        });
+    }
+    if let Some(cost) = oc.local_30d_cost_usd {
+        rows.push(UsageRow {
+            label: "Last 30d".into(),
+            pct: 0.0,
+            detail: format!("${cost:.2}"),
+            reset: None,
+        });
+    }
+    if rows.is_empty()
+        && let Some(e) = &oc.error
     {
         rows.push(error_row(e));
     }

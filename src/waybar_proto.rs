@@ -61,6 +61,16 @@ impl WaybarLine {
             state = state.combine(c.state(cfg));
         }
 
+        // OpenCode: omit when inactive; balance dollars (no percent window).
+        if let Some(o) = &snap.opencode {
+            if let Some(seg) = o.waybar_segment() {
+                parts.push(seg);
+            }
+            // Does not contribute to percent-based warn/crit.
+            tooltip.extend(o.tooltip_lines(cfg.display.reset_style));
+            state = state.combine(o.state(cfg));
+        }
+
         if cfg.display.show_cost
             && let Some(cost) = &snap.cost
         {

@@ -39,6 +39,8 @@ pub struct ProvidersConfig {
     pub grok: GrokProviderConfig,
     #[serde(default)]
     pub cursor: CursorProviderConfig,
+    #[serde(default)]
+    pub opencode: OpenCodeProviderConfig,
 }
 
 /// Shared enablement for providers that auto-detect credentials.
@@ -160,6 +162,31 @@ impl CursorProviderConfig {
             ProviderMode::Off => false,
             ProviderMode::On => true,
             ProviderMode::Auto => self.resolved_cookie().is_some(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenCodeProviderConfig {
+    #[serde(default)]
+    pub mode: ProviderMode,
+}
+
+impl Default for OpenCodeProviderConfig {
+    fn default() -> Self {
+        Self {
+            mode: ProviderMode::Auto,
+        }
+    }
+}
+
+impl OpenCodeProviderConfig {
+    /// Auto activates when `~/.local/share/opencode/auth.json` has an opencode-go key.
+    pub fn is_active(&self) -> bool {
+        match self.mode {
+            ProviderMode::Off => false,
+            ProviderMode::On => true,
+            ProviderMode::Auto => crate::providers::opencode::auth::has_auth_key(),
         }
     }
 }
@@ -360,5 +387,24 @@ mod tests {
             cfg.providers.cursor.resolved_cookie().as_deref(),
             Some("WorkosCursorSessionToken=abc")
         );
+    }
+
+    #[test]
+    fn opencode_provider_defaults_when_absent() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.providers.opencode.mode, ProviderMode::Auto);
+    }
+
+    #[test]
+    fn opencode_provider_mode_parses() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [providers.opencode]
+            mode = "off"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.providers.opencode.mode, ProviderMode::Off);
+        assert!(!cfg.providers.opencode.is_active());
     }
 }
