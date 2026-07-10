@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{CodexProviderConfig, Config, ResetStyle};
+use crate::pace::{self, DEFAULT_SESSION_MINUTES, DEFAULT_WEEKLY_MINUTES};
 use crate::util::time::{expires_label, reset_label};
 use crate::waybar_proto::State;
 
@@ -87,11 +88,18 @@ impl CodexSnapshot {
             header.push_str(&format!(" ({plan})"));
         }
         out.push(header);
+        let now = Utc::now();
         if let Some(w) = &self.primary {
             out.push(window_line("  primary", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_SESSION_MINUTES, now, "    ") {
+                out.push(line);
+            }
         }
         if let Some(w) = &self.secondary {
             out.push(window_line("  secondary", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_WEEKLY_MINUTES, now, "    ") {
+                out.push(line);
+            }
         }
         if let Some(c) = &self.credits
             && c.has_credits
@@ -122,11 +130,18 @@ impl CodexSnapshot {
         if let Some(plan) = &self.plan_type {
             out.push(format!("plan: {plan}"));
         }
+        let now = Utc::now();
         if let Some(w) = &self.primary {
             out.push(window_line("primary", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_SESSION_MINUTES, now, "  ") {
+                out.push(line);
+            }
         }
         if let Some(w) = &self.secondary {
             out.push(window_line("secondary", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_WEEKLY_MINUTES, now, "  ") {
+                out.push(line);
+            }
         }
         if let Some(c) = &self.credits {
             out.push(format!(
@@ -159,6 +174,17 @@ fn window_line(label: &str, w: &Window, style: ResetStyle) -> String {
         .map(|m| format!(" / {}h window", (m / 60).max(1)))
         .unwrap_or_default();
     format!("{label}: {:.1}%{dur}{resets}", w.used_percent)
+}
+
+fn pace_line(w: &Window, default_mins: u32, now: DateTime<Utc>, indent: &str) -> Option<String> {
+    pace::line_for_window(
+        w.used_percent,
+        w.window_minutes,
+        w.resets_at,
+        now,
+        default_mins,
+        indent,
+    )
 }
 
 /// Format rate-limit reset credit inventory with expiry times.

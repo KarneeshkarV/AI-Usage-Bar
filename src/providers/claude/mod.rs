@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{ClaudeProviderConfig, Config, ResetStyle};
+use crate::pace::{self, DEFAULT_SESSION_MINUTES, DEFAULT_WEEKLY_MINUTES};
 use crate::util::time::reset_label;
 use crate::waybar_proto::State;
 
@@ -83,14 +84,24 @@ impl ClaudeSnapshot {
         }
         out.push(header);
 
+        let now = Utc::now();
         if let Some(w) = &self.session {
             out.push(window_line("  session", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_SESSION_MINUTES, now, "    ") {
+                out.push(line);
+            }
         }
         if let Some(w) = &self.weekly {
             out.push(window_line("  weekly", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_WEEKLY_MINUTES, now, "    ") {
+                out.push(line);
+            }
         }
         if let Some(w) = &self.sonnet_weekly {
             out.push(window_line("  sonnet", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_WEEKLY_MINUTES, now, "    ") {
+                out.push(line);
+            }
         }
         if let Some(e) = &self.extra {
             out.push(format!(
@@ -115,14 +126,24 @@ impl ClaudeSnapshot {
         if let Some(src) = &self.source {
             out.push(format!("source: {src}"));
         }
+        let now = Utc::now();
         if let Some(w) = &self.session {
             out.push(window_line("session", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_SESSION_MINUTES, now, "  ") {
+                out.push(line);
+            }
         }
         if let Some(w) = &self.weekly {
             out.push(window_line("weekly", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_WEEKLY_MINUTES, now, "  ") {
+                out.push(line);
+            }
         }
         if let Some(w) = &self.sonnet_weekly {
             out.push(window_line("sonnet (weekly)", w, style));
+            if let Some(line) = pace_line(w, DEFAULT_WEEKLY_MINUTES, now, "  ") {
+                out.push(line);
+            }
         }
         if let Some(e) = &self.extra {
             let pct = if e.limit_usd > 0.0 {
@@ -148,6 +169,10 @@ fn window_line(label: &str, w: &Window, style: ResetStyle) -> String {
         None => String::new(),
     };
     format!("{label}: {:.1}%{resets}", w.used_percent)
+}
+
+fn pace_line(w: &Window, default_mins: u32, now: DateTime<Utc>, indent: &str) -> Option<String> {
+    pace::line_for_window(w.used_percent, None, w.resets_at, now, default_mins, indent)
 }
 
 pub struct Client {

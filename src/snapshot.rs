@@ -5,14 +5,33 @@ use std::io::Write;
 
 use crate::config::cache_dir;
 use crate::cost::CostReport;
-use crate::providers::{claude::ClaudeSnapshot, codex::CodexSnapshot};
+use crate::provider_status::ProviderStatus;
+use crate::providers::{
+    claude::ClaudeSnapshot, codex::CodexSnapshot, cursor::CursorSnapshot, grok::GrokSnapshot,
+    opencode::OpenCodeSnapshot,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snapshot {
     pub refreshed_at: DateTime<Utc>,
     pub codex: Option<CodexSnapshot>,
     pub claude: Option<ClaudeSnapshot>,
+    /// Present only when the Grok provider is active and a refresh was attempted.
+    #[serde(default)]
+    pub grok: Option<GrokSnapshot>,
+    /// Present only when the Cursor provider is active and a refresh was attempted.
+    #[serde(default)]
+    pub cursor: Option<CursorSnapshot>,
+    /// Present only when the OpenCode provider is active and a refresh was attempted.
+    #[serde(default)]
+    pub opencode: Option<OpenCodeSnapshot>,
     pub cost: Option<CostReport>,
+    /// Latest statuspage.io indicators (empty when disabled or not yet polled).
+    #[serde(default)]
+    pub provider_status: Vec<ProviderStatus>,
+    /// When set and still in the future, Waybar/TUI show weekly-reset confetti.
+    #[serde(default)]
+    pub celebrating_until: Option<DateTime<Utc>>,
 }
 
 impl Snapshot {
@@ -21,7 +40,12 @@ impl Snapshot {
             refreshed_at: Utc::now(),
             codex: None,
             claude: None,
+            grok: None,
+            cursor: None,
+            opencode: None,
             cost: None,
+            provider_status: Vec::new(),
+            celebrating_until: None,
         }
     }
 

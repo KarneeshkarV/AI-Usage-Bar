@@ -2,10 +2,15 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
+mod backfill;
+mod celebration;
 mod cli;
 mod config;
 mod cost;
+mod notify;
+mod pace;
 mod ping;
+mod provider_status;
 mod providers;
 mod snapshot;
 mod util;

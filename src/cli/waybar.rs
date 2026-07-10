@@ -3,10 +3,14 @@ use chrono::{DateTime, Utc};
 use std::io::Write;
 use tokio::time::{Duration, interval};
 
+use crate::backfill;
+use crate::celebration;
 use crate::config::Config;
 use crate::cost;
+use crate::notify::Notifier;
 use crate::ping;
-use crate::providers::{claude, codex};
+use crate::provider_status::{self, ProviderStatus};
+use crate::providers::{claude, codex, cursor, grok, opencode};
 use crate::snapshot::{self, Snapshot};
 use crate::waybar_proto::WaybarLine;
 
@@ -14,14 +18,25 @@ pub async fn run() -> Result<()> {
     let cfg = Config::load_or_default()?;
     let mut codex_client = codex::Client::new(cfg.providers.codex.clone());
     let mut claude_client = claude::Client::new(cfg.providers.claude.clone());
+    let mut grok_client = grok::Client::new(cfg.providers.grok.clone());
+    let mut cursor_client = cursor::Client::new(cfg.providers.cursor.clone());
+    let mut opencode_client = opencode::Client::new(cfg.providers.opencode.clone());
+    let mut notifier = Notifier::from_config(&cfg);
 
-    let mut tick = interval(Duration::from_secs(cfg.refresh.interval_secs.max(30)));
-    let mut cost_tick = interval(Duration::from_secs(cfg.refresh.cost_refresh_secs.max(60)));
+    cfg.display.warn_unknown_bar_providers();
+
+    let mut tick = interval(Duration::from_secs(cfg.refresh.usage_interval().max(30)));
+    let mut cost_tick = interval(Duration::from_secs(cfg.refresh.cost_interval().max(60)));
+    let mut status_tick = interval(Duration::from_secs(provider_status::POLL_INTERVAL_SECS));
     let mut last_cost: Option<cost::CostReport> = None;
+    let mut last_status: Vec<ProviderStatus> = Vec::new();
+    let mut status_ready = false;
     let mut last_ping_claude: Option<DateTime<Utc>> = None;
     let mut last_ping_codex: Option<DateTime<Utc>> = None;
     let mut prev_reset_claude: Option<DateTime<Utc>> = None;
     let mut prev_reset_codex: Option<DateTime<Utc>> = None;
+    // Seed from disk so the first poll can still reuse a still-future cached reset.
+    let mut prev_snap: Option<Snapshot> = snapshot::read().ok();
 
     let stdout = std::io::stdout();
 
@@ -29,8 +44,13 @@ pub async fn run() -> Result<()> {
         let mut snap = Snapshot::new();
 
         // Provider polling (independent, parallel)
-        let (codex_res, claude_res) =
-            tokio::join!(codex_client.refresh(), claude_client.refresh(),);
+        let (codex_res, claude_res, grok_res, cursor_res, opencode_res) = tokio::join!(
+            codex_client.refresh(),
+            claude_client.refresh(),
+            grok_client.refresh(),
+            cursor_client.refresh(),
+            opencode_client.refresh(),
+        );
         snap.codex = codex_res.unwrap_or_else(|e| {
             tracing::warn!(error = %e, "codex refresh failed");
             None
@@ -39,18 +59,57 @@ pub async fn run() -> Result<()> {
             tracing::warn!(error = %e, "claude refresh failed");
             None
         });
+        snap.grok = grok_res.unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "grok refresh failed");
+            None
+        });
+        snap.cursor = cursor_res.unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "cursor refresh failed");
+            None
+        });
+        snap.opencode = opencode_res.unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "opencode refresh failed");
+            None
+        });
 
         // Cost: refresh on the slower cadence
         if last_cost.is_none() {
             last_cost = cost::scan_both().await.ok();
         }
         snap.cost = last_cost.clone();
-        snap.refreshed_at = chrono::Utc::now();
+
+        // Status pages: first poll immediately, then every ~15 min.
+        if cfg.status.enabled && !status_ready {
+            last_status = provider_status::refresh_all(&cfg, &last_status).await;
+            status_ready = true;
+        }
+        snap.provider_status = if cfg.status.enabled {
+            last_status.clone()
+        } else {
+            Vec::new()
+        };
+
+        let now = chrono::Utc::now();
+        snap.refreshed_at = now;
+
+        // Reuse still-future reset times from the previous snapshot when a fresh
+        // poll omits them (API flakiness / partial responses).
+        backfill::backfill_snapshot(&mut snap, prev_snap.as_ref(), now);
+
+        // Weekly-reset celebration window (Codex secondary / Claude weekly).
+        if cfg.display.confetti {
+            snap.celebrating_until =
+                celebration::resolve_celebrating_until(prev_snap.as_ref(), &snap, now);
+        }
+
+        // Desktop notifications (waybar only): compare against previous poll.
+        notifier.process(prev_snap.as_ref(), &snap).await;
 
         // Atomic snapshot write so `ai-usage-bar status` can read it
         if let Err(e) = snapshot::write(&snap) {
             tracing::warn!(error = %e, "snapshot write failed");
         }
+        prev_snap = Some(snap.clone());
 
         // Anchor the next session window with a headless ping near its reset.
         if cfg.ping.enabled {
@@ -88,6 +147,12 @@ pub async fn run() -> Result<()> {
             _ = tick.tick() => {},
             _ = cost_tick.tick() => {
                 last_cost = cost::scan_both().await.ok();
+            }
+            _ = status_tick.tick() => {
+                if cfg.status.enabled {
+                    last_status = provider_status::refresh_all(&cfg, &last_status).await;
+                    status_ready = true;
+                }
             }
         }
     }
