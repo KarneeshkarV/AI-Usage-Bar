@@ -104,8 +104,13 @@ impl OpenCodeSnapshot {
         if let Some(b) = self.balance_usd {
             return Some(format!("O {}", format_dollars(b)));
         }
-        // Active but balance unavailable — keep a segment so tooltip/auth stay wired.
-        if self.local_30d_cost_usd.is_some() || self.error.is_some() {
+        // Balance unavailable (the Zen balance API is not public yet) — the
+        // local 30d spend is the next most useful figure for the bar.
+        if let Some(c) = self.local_30d_cost_usd {
+            return Some(format!("O {}", format_dollars(c)));
+        }
+        // Active but no data at all — keep a segment so tooltip/auth stay wired.
+        if self.error.is_some() {
             return Some("O —".into());
         }
         None
