@@ -39,6 +39,7 @@ pub async fn fetch(rpc: &mut RpcClient) -> Result<CodexSnapshot> {
         primary,
         secondary,
         credits,
+        reset_credits: None,
         error: None,
     })
 }

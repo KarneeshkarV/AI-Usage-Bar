@@ -90,6 +90,12 @@ pub fn reset_label(target: DateTime<Utc>, style: ResetStyle) -> String {
     format!("resets {}", reset_phrase(target, style))
 }
 
+/// Expiry clause for inventory items (reset credits, etc.):
+/// `expires in 2h 14m`, `expires now`, `expires 14:30`, …
+pub fn expires_label(target: DateTime<Utc>, style: ResetStyle) -> String {
+    format!("expires {}", reset_phrase(target, style))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

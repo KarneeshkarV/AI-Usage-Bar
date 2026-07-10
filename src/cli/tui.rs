@@ -436,6 +436,23 @@ fn codex_rows(app: &App) -> Vec<UsageRow> {
             },
         });
     }
+    if let Some(rc) = &codex.reset_credits
+        && rc.available_count > 0
+    {
+        let n = rc.available_count;
+        let noun = if n == 1 { "credit" } else { "credits" };
+        rows.push(UsageRow {
+            label: "Reset".into(),
+            // Visual only — not a usage percentage. Full bar reads as “inventory ready”.
+            pct: 0.0,
+            detail: format!("{n} {noun} available"),
+            reset: rc
+                .credits
+                .iter()
+                .find_map(|c| c.expires_at)
+                .map(|t| crate::util::time::expires_label(t, app.reset_style)),
+        });
+    }
     if rows.is_empty()
         && let Some(e) = &codex.error
     {

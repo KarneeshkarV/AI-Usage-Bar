@@ -1,4 +1,6 @@
+pub mod auth;
 pub mod limits;
+pub mod reset_credits;
 pub mod rpc;
 
 use anyhow::Result;
@@ -6,8 +8,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{CodexProviderConfig, Config, ResetStyle};
-use crate::util::time::reset_label;
+use crate::util::time::{expires_label, reset_label};
 use crate::waybar_proto::State;
+
+pub use reset_credits::ResetCreditsSnapshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodexSnapshot {
@@ -16,6 +20,9 @@ pub struct CodexSnapshot {
     pub primary: Option<Window>,
     pub secondary: Option<Window>,
     pub credits: Option<Credits>,
+    /// Manual rate-limit reset credits (full 5h + weekly resets), with expiries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reset_credits: Option<ResetCreditsSnapshot>,
     pub error: Option<String>,
 }
 
@@ -34,6 +41,18 @@ pub struct Credits {
 }
 
 impl CodexSnapshot {
+    fn empty_error(error: String) -> Self {
+        Self {
+            account_email: None,
+            plan_type: None,
+            primary: None,
+            secondary: None,
+            credits: None,
+            reset_credits: None,
+            error: Some(error),
+        }
+    }
+
     pub fn worst_percent(&self) -> Option<u8> {
         let p = self.primary.as_ref().map(|w| w.used_percent)?;
         Some(p.round().clamp(0.0, 100.0) as u8)
@@ -48,7 +67,15 @@ impl CodexSnapshot {
 
     pub fn summary_line(&self) -> String {
         match self.worst_percent() {
-            Some(p) => format!("{p}% used"),
+            Some(p) => {
+                if let Some(rc) = &self.reset_credits
+                    && rc.available_count > 0
+                {
+                    format!("{p}% used · {} reset credits", rc.available_count)
+                } else {
+                    format!("{p}% used")
+                }
+            }
             None => self.error.clone().unwrap_or_else(|| "no data".into()),
         }
     }
@@ -75,6 +102,7 @@ impl CodexSnapshot {
                 if c.unlimited { " (unlimited)" } else { "" }
             ));
         }
+        out.extend(reset_credit_lines(self.reset_credits.as_ref(), style, "  ", false));
         if let Some(e) = &self.error {
             out.push(format!("  error: {e}"));
         }
@@ -103,6 +131,7 @@ impl CodexSnapshot {
                 c.balance.clone().unwrap_or_default()
             ));
         }
+        out.extend(reset_credit_lines(self.reset_credits.as_ref(), style, "", true));
         if let Some(e) = &self.error {
             out.push(format!("error: {e}"));
         }
@@ -120,6 +149,61 @@ fn window_line(label: &str, w: &Window, style: ResetStyle) -> String {
         .map(|m| format!(" / {}h window", (m / 60).max(1)))
         .unwrap_or_default();
     format!("{label}: {:.1}%{dur}{resets}", w.used_percent)
+}
+
+/// Format rate-limit reset credit inventory with expiry times.
+///
+/// `detailed` lists every credit expiry; compact mode only shows the next one.
+fn reset_credit_lines(
+    rc: Option<&ResetCreditsSnapshot>,
+    style: ResetStyle,
+    indent: &str,
+    detailed: bool,
+) -> Vec<String> {
+    let Some(rc) = rc else {
+        return Vec::new();
+    };
+    if rc.available_count == 0 && rc.credits.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let n = rc.available_count;
+    out.push(format!("{indent}reset credits: {n} available"));
+
+    if detailed {
+        if rc.credits.is_empty() {
+            // Server count only — no per-credit expiry known.
+        } else {
+            for credit in &rc.credits {
+                if let Some(exp) = credit.expires_at {
+                    let title = credit
+                        .title
+                        .as_deref()
+                        .filter(|t| !t.is_empty())
+                        .unwrap_or("full reset");
+                    out.push(format!(
+                        "{indent}  · {title} ({})",
+                        expires_label(exp, style)
+                    ));
+                } else {
+                    let title = credit
+                        .title
+                        .as_deref()
+                        .filter(|t| !t.is_empty())
+                        .unwrap_or("full reset");
+                    out.push(format!("{indent}  · {title} (no expiry)"));
+                }
+            }
+        }
+    } else if let Some(next) = rc.credits.iter().find_map(|c| c.expires_at) {
+        out.push(format!(
+            "{indent}  next {}",
+            expires_label(next, style)
+        ));
+    }
+
+    out
 }
 
 pub struct Client {
@@ -140,33 +224,109 @@ impl Client {
             match rpc::RpcClient::spawn(self.cfg.binary.as_deref()).await {
                 Ok(c) => self.rpc = Some(c),
                 Err(e) => {
-                    return Ok(Some(CodexSnapshot {
-                        account_email: None,
-                        plan_type: None,
-                        primary: None,
-                        secondary: None,
-                        credits: None,
-                        error: Some(format!("spawn: {e}")),
-                    }));
+                    let mut snap = CodexSnapshot::empty_error(format!("spawn: {e}"));
+                    enrich_reset_credits(&mut snap).await;
+                    return Ok(Some(snap));
                 }
             }
         }
         let rpc = self.rpc.as_mut().unwrap();
-        let snap = match limits::fetch(rpc).await {
+        let mut snap = match limits::fetch(rpc).await {
             Ok(s) => s,
             Err(e) => {
                 // Recycle on error; next refresh will respawn.
                 self.rpc = None;
-                CodexSnapshot {
-                    account_email: None,
-                    plan_type: None,
-                    primary: None,
-                    secondary: None,
-                    credits: None,
-                    error: Some(format!("rpc: {e}")),
-                }
+                CodexSnapshot::empty_error(format!("rpc: {e}"))
             }
         };
+        enrich_reset_credits(&mut snap).await;
         Ok(Some(snap))
+    }
+}
+
+/// Attach reset-credit inventory when OAuth credentials are available.
+/// Failures are silent — usage windows still render without this enrichment.
+async fn enrich_reset_credits(snap: &mut CodexSnapshot) {
+    match reset_credits::fetch().await {
+        Ok(rc) => snap.reset_credits = Some(rc),
+        Err(e) => {
+            tracing::debug!(error = %e, "codex reset credits unavailable");
+        }
+    }
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+    use super::reset_credits::ResetCredit;
+    use chrono::TimeZone;
+    use crate::config::ResetStyle;
+
+    fn utc(y: i32, m: u32, d: u32, h: u32, min: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(y, m, d, h, min, 0).unwrap()
+    }
+
+    #[test]
+    fn detail_lists_each_credit_expiry() {
+        let snap = CodexSnapshot {
+            account_email: None,
+            plan_type: Some("plus".into()),
+            primary: None,
+            secondary: None,
+            credits: None,
+            reset_credits: Some(ResetCreditsSnapshot {
+                available_count: 2,
+                credits: vec![
+                    ResetCredit {
+                        status: "available".into(),
+                        title: Some("Full reset (Weekly + 5 hr)".into()),
+                        granted_at: None,
+                        expires_at: Some(utc(2026, 7, 18, 0, 6)),
+                    },
+                    ResetCredit {
+                        status: "available".into(),
+                        title: Some("Full reset (Weekly + 5 hr)".into()),
+                        granted_at: None,
+                        expires_at: Some(utc(2026, 7, 26, 23, 26)),
+                    },
+                ],
+            }),
+            error: None,
+        };
+        let lines = snap.detail_lines(ResetStyle::Absolute);
+        assert!(lines.iter().any(|l| l.contains("reset credits: 2 available")));
+        assert!(lines.iter().any(|l| l.contains("expires")));
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|l| l.contains("Full reset"))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn tooltip_shows_next_expiry_only() {
+        let snap = CodexSnapshot {
+            account_email: None,
+            plan_type: None,
+            primary: None,
+            secondary: None,
+            credits: None,
+            reset_credits: Some(ResetCreditsSnapshot {
+                available_count: 3,
+                credits: vec![ResetCredit {
+                    status: "available".into(),
+                    title: None,
+                    granted_at: None,
+                    expires_at: Some(utc(2026, 7, 18, 0, 6)),
+                }],
+            }),
+            error: None,
+        };
+        let lines = snap.tooltip_lines(ResetStyle::Countdown);
+        assert!(lines.iter().any(|l| l.contains("reset credits: 3 available")));
+        assert!(lines.iter().any(|l| l.contains("next")));
+        assert!(lines.iter().any(|l| l.contains("expires")));
     }
 }
