@@ -6,7 +6,7 @@ use tokio::time::{Duration, interval};
 use crate::config::Config;
 use crate::cost;
 use crate::ping;
-use crate::providers::{claude, codex, grok};
+use crate::providers::{claude, codex, cursor, grok};
 use crate::snapshot::{self, Snapshot};
 use crate::waybar_proto::WaybarLine;
 
@@ -15,6 +15,7 @@ pub async fn run() -> Result<()> {
     let mut codex_client = codex::Client::new(cfg.providers.codex.clone());
     let mut claude_client = claude::Client::new(cfg.providers.claude.clone());
     let mut grok_client = grok::Client::new(cfg.providers.grok.clone());
+    let mut cursor_client = cursor::Client::new(cfg.providers.cursor.clone());
 
     let mut tick = interval(Duration::from_secs(cfg.refresh.interval_secs.max(30)));
     let mut cost_tick = interval(Duration::from_secs(cfg.refresh.cost_refresh_secs.max(60)));
@@ -30,10 +31,11 @@ pub async fn run() -> Result<()> {
         let mut snap = Snapshot::new();
 
         // Provider polling (independent, parallel)
-        let (codex_res, claude_res, grok_res) = tokio::join!(
+        let (codex_res, claude_res, grok_res, cursor_res) = tokio::join!(
             codex_client.refresh(),
             claude_client.refresh(),
             grok_client.refresh(),
+            cursor_client.refresh(),
         );
         snap.codex = codex_res.unwrap_or_else(|e| {
             tracing::warn!(error = %e, "codex refresh failed");
@@ -45,6 +47,10 @@ pub async fn run() -> Result<()> {
         });
         snap.grok = grok_res.unwrap_or_else(|e| {
             tracing::warn!(error = %e, "grok refresh failed");
+            None
+        });
+        snap.cursor = cursor_res.unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "cursor refresh failed");
             None
         });
 

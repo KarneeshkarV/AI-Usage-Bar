@@ -5,7 +5,9 @@ use std::io::Write;
 
 use crate::config::cache_dir;
 use crate::cost::CostReport;
-use crate::providers::{claude::ClaudeSnapshot, codex::CodexSnapshot, grok::GrokSnapshot};
+use crate::providers::{
+    claude::ClaudeSnapshot, codex::CodexSnapshot, cursor::CursorSnapshot, grok::GrokSnapshot,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -15,6 +17,9 @@ pub struct Snapshot {
     /// Present only when the Grok provider is active and a refresh was attempted.
     #[serde(default)]
     pub grok: Option<GrokSnapshot>,
+    /// Present only when the Cursor provider is active and a refresh was attempted.
+    #[serde(default)]
+    pub cursor: Option<CursorSnapshot>,
     pub cost: Option<CostReport>,
 }
 
@@ -25,6 +30,7 @@ impl Snapshot {
             codex: None,
             claude: None,
             grok: None,
+            cursor: None,
             cost: None,
         }
     }

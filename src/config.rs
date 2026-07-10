@@ -37,6 +37,8 @@ pub struct ProvidersConfig {
     pub claude: ClaudeProviderConfig,
     #[serde(default)]
     pub grok: GrokProviderConfig,
+    #[serde(default)]
+    pub cursor: CursorProviderConfig,
 }
 
 /// Shared enablement for providers that auto-detect credentials.
@@ -114,6 +116,50 @@ impl GrokProviderConfig {
                 grok_auth_json_path().is_some_and(|p| p.is_file())
                     || crate::util::path::resolve_binary("grok", self.binary.as_deref()).is_some()
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CursorProviderConfig {
+    #[serde(default)]
+    pub mode: ProviderMode,
+    /// Raw `Cookie` header value (typically `WorkosCursorSessionToken=...`).
+    /// Prefer `AI_USAGE_BAR_CURSOR_COOKIE` so the secret stays out of the file.
+    #[serde(default)]
+    pub cookie: Option<String>,
+}
+
+impl Default for CursorProviderConfig {
+    fn default() -> Self {
+        Self {
+            mode: ProviderMode::Auto,
+            cookie: None,
+        }
+    }
+}
+
+impl CursorProviderConfig {
+    /// Env override wins over the TOML `cookie` field.
+    pub fn resolved_cookie(&self) -> Option<String> {
+        if let Ok(env) = std::env::var("AI_USAGE_BAR_CURSOR_COOKIE") {
+            let trimmed = env.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        self.cookie
+            .as_ref()
+            .map(|c| c.trim().to_string())
+            .filter(|c| !c.is_empty())
+    }
+
+    /// Auto activates when a session cookie is configured (config or env).
+    pub fn is_active(&self) -> bool {
+        match self.mode {
+            ProviderMode::Off => false,
+            ProviderMode::On => true,
+            ProviderMode::Auto => self.resolved_cookie().is_some(),
         }
     }
 }
@@ -284,5 +330,35 @@ mod tests {
             Some("/usr/local/bin/grok")
         );
         assert!(!cfg.providers.grok.is_active());
+    }
+
+    #[test]
+    fn cursor_provider_defaults_when_absent() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.providers.cursor.mode, ProviderMode::Auto);
+        assert!(cfg.providers.cursor.cookie.is_none());
+        assert!(!cfg.providers.cursor.is_active());
+    }
+
+    #[test]
+    fn cursor_provider_mode_and_cookie_parse() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [providers.cursor]
+            mode = "on"
+            cookie = "WorkosCursorSessionToken=abc"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.providers.cursor.mode, ProviderMode::On);
+        assert_eq!(
+            cfg.providers.cursor.cookie.as_deref(),
+            Some("WorkosCursorSessionToken=abc")
+        );
+        assert!(cfg.providers.cursor.is_active());
+        assert_eq!(
+            cfg.providers.cursor.resolved_cookie().as_deref(),
+            Some("WorkosCursorSessionToken=abc")
+        );
     }
 }

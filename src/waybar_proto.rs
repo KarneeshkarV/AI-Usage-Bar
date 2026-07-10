@@ -52,6 +52,15 @@ impl WaybarLine {
             state = state.combine(g.state(cfg));
         }
 
+        // Cursor: omit completely when inactive / not refreshed (auto-detect).
+        if let Some(c) = &snap.cursor {
+            let pct = c.worst_percent().unwrap_or(0);
+            parts.push(format!("Cu {}%", remaining_percent(pct)));
+            worst = worst.max(pct);
+            tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
+            state = state.combine(c.state(cfg));
+        }
+
         if cfg.display.show_cost
             && let Some(cost) = &snap.cost
         {

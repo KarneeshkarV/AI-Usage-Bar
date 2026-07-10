@@ -194,9 +194,17 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
         .map(|p| format!("{p}%"))
         .unwrap_or_else(|| "—".into());
 
+    let cursor_pct = app
+        .snapshot
+        .as_ref()
+        .and_then(|s| s.cursor.as_ref())
+        .and_then(|c| c.worst_percent())
+        .map(|p| format!("{p}%"))
+        .unwrap_or_else(|| "—".into());
+
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(area);
 
     frame.render_widget(
@@ -220,6 +228,11 @@ fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
                 grok_pct,
                 Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
             ),
+            Span::styled("  cursor ", Style::default().fg(OVERLAY0)),
+            Span::styled(
+                cursor_pct,
+                Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
+            ),
         ]))
         .alignment(Alignment::Right),
         cols[1],
@@ -231,24 +244,28 @@ enum ProviderKind {
     Codex,
     Claude,
     Grok,
+    Cursor,
 }
 
 fn render_providers(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
-    // Three columns with 1-cell gaps
+    // Four columns with 1-cell gaps
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(33),
+            Constraint::Percentage(24),
             Constraint::Length(1),
-            Constraint::Percentage(33),
+            Constraint::Percentage(24),
             Constraint::Length(1),
-            Constraint::Percentage(34),
+            Constraint::Percentage(24),
+            Constraint::Length(1),
+            Constraint::Percentage(25),
         ])
         .split(area);
 
     render_provider_panel(frame, cols[0], app, ProviderKind::Codex);
     render_provider_panel(frame, cols[2], app, ProviderKind::Claude);
     render_provider_panel(frame, cols[4], app, ProviderKind::Grok);
+    render_provider_panel(frame, cols[6], app, ProviderKind::Cursor);
 }
 
 fn render_provider_panel(
@@ -261,6 +278,7 @@ fn render_provider_panel(
         ProviderKind::Codex => ("CODEX", MAUVE),
         ProviderKind::Claude => ("CLAUDE", BLUE),
         ProviderKind::Grok => ("GROK", GREEN),
+        ProviderKind::Cursor => ("CURSOR", YELLOW),
     };
 
     let plan_suffix = match kind {
@@ -279,6 +297,13 @@ fn render_provider_panel(
             .map(|p| format!(" · {p}"))
             .unwrap_or_default(),
         ProviderKind::Grok => String::new(),
+        ProviderKind::Cursor => app
+            .snapshot
+            .as_ref()
+            .and_then(|s| s.cursor.as_ref())
+            .and_then(|c| c.membership_type.as_ref())
+            .map(|p| format!(" · {p}"))
+            .unwrap_or_default(),
     };
 
     let block = Block::default()
@@ -307,6 +332,7 @@ fn render_provider_panel(
         ProviderKind::Claude => claude_rows(app),
         ProviderKind::Codex => codex_rows(app),
         ProviderKind::Grok => grok_rows(app),
+        ProviderKind::Cursor => cursor_rows(app),
     };
 
     if rows.is_empty() {
@@ -328,6 +354,12 @@ fn render_provider_panel(
                 .snapshot
                 .as_ref()
                 .and_then(|s| s.grok.as_ref())
+                .and_then(|c| c.error.as_deref())
+                .unwrap_or("no data"),
+            ProviderKind::Cursor => app
+                .snapshot
+                .as_ref()
+                .and_then(|s| s.cursor.as_ref())
                 .and_then(|c| c.error.as_deref())
                 .unwrap_or("no data"),
         };
@@ -580,6 +612,60 @@ fn grok_rows(app: &App) -> Vec<UsageRow> {
     }
     if rows.is_empty()
         && let Some(e) = &grok.error
+    {
+        rows.push(error_row(e));
+    }
+    rows
+}
+
+fn cursor_rows(app: &App) -> Vec<UsageRow> {
+    let Some(snap) = &app.snapshot else {
+        return Vec::new();
+    };
+    let Some(cursor) = &snap.cursor else {
+        return Vec::new();
+    };
+
+    let mut rows = Vec::new();
+    if let Some(w) = &cursor.primary {
+        let detail =
+            if let (Some(used), Some(limit)) = (cursor.requests_used, cursor.requests_limit) {
+                format!("{used} / {limit} req")
+            } else {
+                match (cursor.plan_used_usd, cursor.plan_limit_usd) {
+                    (Some(used), Some(limit)) => format!("${used:.2} / ${limit:.2}"),
+                    _ => w
+                        .window_minutes
+                        .map(|m| {
+                            let days = (m / (24 * 60)).max(1);
+                            format!("{days}d window")
+                        })
+                        .unwrap_or_else(|| "plan".into()),
+                }
+            };
+        rows.push(UsageRow {
+            label: "Plan".into(),
+            pct: w.used_percent,
+            detail,
+            reset: w.resets_at.map(|t| reset_label(t, app.reset_style)),
+        });
+    }
+    if let Some(used) = cursor.on_demand_used_usd
+        && (used > 0.0 || cursor.on_demand_limit_usd.unwrap_or(0.0) > 0.0)
+    {
+        let detail = match cursor.on_demand_limit_usd {
+            Some(limit) if limit > 0.0 => format!("${used:.2} / ${limit:.2}"),
+            _ => format!("${used:.2}"),
+        };
+        rows.push(UsageRow {
+            label: "On-demand".into(),
+            pct: 0.0,
+            detail,
+            reset: None,
+        });
+    }
+    if rows.is_empty()
+        && let Some(e) = &cursor.error
     {
         rows.push(error_row(e));
     }
