@@ -17,6 +17,7 @@ use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Sparkline};
 
 use chrono::Utc;
 
+use crate::celebration;
 use crate::config::{Config, ResetStyle};
 use crate::pace::{self, DEFAULT_SESSION_MINUTES, DEFAULT_WEEKLY_MINUTES};
 use crate::provider_status;
@@ -43,6 +44,9 @@ struct App {
     next_poll: Instant,
     reset_style: ResetStyle,
     show_cost: bool,
+    confetti: bool,
+    /// Monotonic tick for confetti particle animation.
+    frame: u64,
 }
 
 impl App {
@@ -56,6 +60,8 @@ impl App {
             next_poll: Instant::now(),
             reset_style: cfg.display.reset_style,
             show_cost: cfg.display.show_cost,
+            confetti: cfg.display.confetti,
+            frame: 0,
         };
         app.refresh();
         app
@@ -99,12 +105,25 @@ pub async fn run(poll_secs: u64) -> Result<()> {
     let mut app = App::new(poll_secs);
 
     loop {
+        app.frame = app.frame.wrapping_add(1);
         terminal.draw(|frame| draw(frame, &app))?;
+
+        // Faster tick while celebrating so confetti animates smoothly.
+        let animating = app.confetti
+            && app
+                .snapshot
+                .as_ref()
+                .is_some_and(|s| celebration::is_celebrating(s.celebrating_until, Utc::now()));
+        let tick = if animating {
+            Duration::from_millis(80)
+        } else {
+            Duration::from_millis(250)
+        };
 
         let timeout = app
             .next_poll
             .saturating_duration_since(Instant::now())
-            .min(Duration::from_millis(250));
+            .min(tick);
 
         if event::poll(timeout)?
             && let Event::Key(key) = event::read()?
@@ -169,6 +188,14 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &App) {
         render_cost(frame, chunks[4], app);
     }
     render_footer(frame, chunks[6]);
+
+    // Confetti last so particles sit above panels without covering labels much.
+    if app.confetti
+        && let Some(until) = app.snapshot.as_ref().and_then(|s| s.celebrating_until)
+        && celebration::is_celebrating(Some(until), Utc::now())
+    {
+        render_confetti(frame, area, celebration::confetti_seed(until), app.frame);
+    }
 }
 
 fn render_status(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
@@ -988,6 +1015,53 @@ fn color_for_pct(pct: f64) -> Color {
         YELLOW
     } else {
         GREEN
+    }
+}
+
+/// Lightweight confetti: a few dozen colored glyphs falling through the frame.
+/// Positions are deterministic from the weekly-reset seed + frame index.
+fn render_confetti(frame: &mut ratatui::Frame<'_>, area: Rect, seed: u64, tick: u64) {
+    const GLYPHS: &[char] = &['•', '*', '▪', '·', '✦'];
+    const COLORS: &[Color] = &[MAUVE, BLUE, GREEN, YELLOW, RED];
+    const N: u64 = 36;
+
+    let w = area.width as u64;
+    let h = area.height as u64;
+    if w < 4 || h < 4 {
+        return;
+    }
+
+    let buf = frame.buffer_mut();
+    for i in 0..N {
+        // xorshift-ish mix per particle
+        let mut s = seed
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .wrapping_add(i.wrapping_mul(0xC2B2_AE3D_27D4_EB4F));
+        s ^= s >> 30;
+        s = s.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        s ^= s >> 27;
+
+        let col = area.x + ((s % w) as u16);
+        let speed = 1 + (s >> 8) % 3;
+        let phase = (s >> 16) % h;
+        let row_off = (tick.wrapping_mul(speed).wrapping_add(phase)) % h;
+        let row = area.y + row_off as u16;
+
+        // Keep particles off the outer border cells so they don't punch holes
+        // in the rounded chrome; stay a cell inside.
+        if col <= area.x || col >= area.x + area.width.saturating_sub(1) {
+            continue;
+        }
+        if row <= area.y || row >= area.y + area.height.saturating_sub(1) {
+            continue;
+        }
+
+        let glyph = GLYPHS[(s as usize) % GLYPHS.len()];
+        let color = COLORS[((s >> 4) as usize) % COLORS.len()];
+        if let Some(cell) = buf.cell_mut((col, row)) {
+            cell.set_char(glyph);
+            cell.set_style(Style::default().fg(color).bg(BASE));
+        }
     }
 }
 

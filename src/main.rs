@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 mod backfill;
+mod celebration;
 mod cli;
 mod config;
 mod cost;

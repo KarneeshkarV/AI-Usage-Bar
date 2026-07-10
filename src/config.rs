@@ -285,6 +285,9 @@ pub struct DisplayConfig {
     /// status / TUI always show all active providers.
     #[serde(default)]
     pub bar_providers: Option<Vec<String>>,
+    /// Celebrate weekly quota resets with a Waybar emoji and TUI confetti.
+    #[serde(default = "default_true")]
+    pub confetti: bool,
 }
 
 impl Default for DisplayConfig {
@@ -296,6 +299,7 @@ impl Default for DisplayConfig {
             crit_threshold: 90,
             reset_style: ResetStyle::Countdown,
             bar_providers: None,
+            confetti: true,
         }
     }
 }
@@ -686,5 +690,24 @@ mod tests {
         .unwrap();
         assert!(cfg.display.bar_provider_allowed("codex"));
         assert!(!cfg.display.bar_provider_allowed("not-a-provider"));
+    }
+
+    #[test]
+    fn confetti_defaults_on() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert!(cfg.display.confetti);
+
+        let cfg: Config = toml::from_str(
+            r#"
+            [display]
+            merge_text = true
+            show_cost = true
+            warn_threshold = 70
+            crit_threshold = 90
+            confetti = false
+            "#,
+        )
+        .unwrap();
+        assert!(!cfg.display.confetti);
     }
 }

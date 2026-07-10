@@ -4,6 +4,7 @@ use std::io::Write;
 use tokio::time::{Duration, interval};
 
 use crate::backfill;
+use crate::celebration;
 use crate::config::Config;
 use crate::cost;
 use crate::notify::Notifier;
@@ -94,6 +95,12 @@ pub async fn run() -> Result<()> {
         // Reuse still-future reset times from the previous snapshot when a fresh
         // poll omits them (API flakiness / partial responses).
         backfill::backfill_snapshot(&mut snap, prev_snap.as_ref(), now);
+
+        // Weekly-reset celebration window (Codex secondary / Claude weekly).
+        if cfg.display.confetti {
+            snap.celebrating_until =
+                celebration::resolve_celebrating_until(prev_snap.as_ref(), &snap, now);
+        }
 
         // Desktop notifications (waybar only): compare against previous poll.
         notifier.process(prev_snap.as_ref(), &snap).await;

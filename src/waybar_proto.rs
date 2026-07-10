@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::celebration;
 use crate::config::Config;
 use crate::provider_status;
 use crate::snapshot::Snapshot;
@@ -107,11 +108,22 @@ impl WaybarLine {
             state = state.combine(State::Incident);
         }
 
-        let text = if cfg.display.merge_text {
+        let mut text = if cfg.display.merge_text {
             parts.join(" / ")
         } else {
             parts.join(" ")
         };
+
+        let celebrating = cfg.display.confetti
+            && celebration::is_celebrating(snap.celebrating_until, chrono::Utc::now());
+        if celebrating {
+            if !text.is_empty() {
+                text = format!("🎉 {text}");
+            } else {
+                text = "🎉".into();
+            }
+            tooltip.insert(0, "🎉 weekly quota reset — fresh week!".into());
+        }
 
         Self {
             text,
@@ -294,6 +306,85 @@ mod tests {
 
         let line = WaybarLine::from_snapshot(&snap, &cfg);
         assert_eq!(line.class, "warn");
+    }
+
+    #[test]
+    fn celebrating_prefixes_text_and_tooltip() {
+        let cfg = Config::default();
+        let mut snap = Snapshot::new();
+        snap.refreshed_at = Utc::now();
+        snap.celebrating_until = Some(Utc::now() + chrono::Duration::minutes(5));
+        snap.codex = Some(crate::providers::codex::CodexSnapshot {
+            account_email: None,
+            plan_type: None,
+            primary: Some(crate::providers::codex::Window {
+                used_percent: 10.0,
+                window_minutes: Some(300),
+                resets_at: None,
+            }),
+            secondary: None,
+            credits: None,
+            error: None,
+        });
+        snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
+            account_email: None,
+            plan_type: None,
+            session: Some(crate::providers::claude::Window {
+                used_percent: 5.0,
+                resets_at: None,
+            }),
+            weekly: None,
+            sonnet_weekly: None,
+            extra: None,
+            source: None,
+            error: None,
+        });
+
+        let line = WaybarLine::from_snapshot(&snap, &cfg);
+        assert!(line.text.starts_with("🎉 "), "text={}", line.text);
+        assert!(
+            line.tooltip.contains("weekly quota reset"),
+            "tooltip={}",
+            line.tooltip
+        );
+    }
+
+    #[test]
+    fn confetti_off_skips_celebration_ui() {
+        let mut cfg = Config::default();
+        cfg.display.confetti = false;
+        let mut snap = Snapshot::new();
+        snap.refreshed_at = Utc::now();
+        snap.celebrating_until = Some(Utc::now() + chrono::Duration::minutes(5));
+        snap.codex = Some(crate::providers::codex::CodexSnapshot {
+            account_email: None,
+            plan_type: None,
+            primary: Some(crate::providers::codex::Window {
+                used_percent: 10.0,
+                window_minutes: Some(300),
+                resets_at: None,
+            }),
+            secondary: None,
+            credits: None,
+            error: None,
+        });
+        snap.claude = Some(crate::providers::claude::ClaudeSnapshot {
+            account_email: None,
+            plan_type: None,
+            session: Some(crate::providers::claude::Window {
+                used_percent: 5.0,
+                resets_at: None,
+            }),
+            weekly: None,
+            sonnet_weekly: None,
+            extra: None,
+            source: None,
+            error: None,
+        });
+
+        let line = WaybarLine::from_snapshot(&snap, &cfg);
+        assert!(!line.text.starts_with("🎉"), "text={}", line.text);
+        assert!(!line.tooltip.contains("fresh week"));
     }
 
     #[test]

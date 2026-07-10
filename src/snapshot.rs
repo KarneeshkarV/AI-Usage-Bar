@@ -29,6 +29,9 @@ pub struct Snapshot {
     /// Latest statuspage.io indicators (empty when disabled or not yet polled).
     #[serde(default)]
     pub provider_status: Vec<ProviderStatus>,
+    /// When set and still in the future, Waybar/TUI show weekly-reset confetti.
+    #[serde(default)]
+    pub celebrating_until: Option<DateTime<Utc>>,
 }
 
 impl Snapshot {
@@ -42,6 +45,7 @@ impl Snapshot {
             opencode: None,
             cost: None,
             provider_status: Vec::new(),
+            celebrating_until: None,
         }
     }
 
