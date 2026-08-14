@@ -6,13 +6,16 @@ use crate::providers::{claude, codex, cursor, grok, opencode};
 use crate::snapshot::{self, Snapshot};
 use crate::util::spark;
 
+/// Cached Waybar snapshot when it is younger than 30 minutes, else a live poll.
+pub async fn load_snapshot() -> Result<Snapshot> {
+    match snapshot::read() {
+        Ok(s) if !s.is_stale(std::time::Duration::from_secs(30 * 60)) => Ok(s),
+        _ => one_shot().await,
+    }
+}
+
 pub async fn run(detailed: bool) -> Result<()> {
-    // Prefer the cached snapshot written by `ai-usage-bar waybar`. Fall back to a
-    // synchronous one-shot poll if no daemon has written one yet.
-    let snap = match snapshot::read() {
-        Ok(s) if !s.is_stale(std::time::Duration::from_secs(30 * 60)) => s,
-        _ => one_shot().await?,
-    };
+    let snap = load_snapshot().await?;
 
     let cfg = Config::load_or_default().unwrap_or_default();
     let style = cfg.display.reset_style;

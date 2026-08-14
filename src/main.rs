@@ -20,11 +20,11 @@ mod waybar_proto;
 #[command(
     name = "ai-usage-bar",
     version,
-    about = "AI Usage Bar: AI coding usage limits in your Waybar"
+    about = "AI Usage Bar: AI coding usage limits in your Waybar. Default: print the four limits."
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Cmd,
+    command: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
@@ -36,6 +36,8 @@ enum Cmd {
         #[arg(long)]
         detailed: bool,
     },
+    /// Print Codex, Claude, Grok, and Cursor limits as a colored dashboard.
+    Limits,
     /// Interactive terminal popover inspired by CodexBar.
     Tui {
         /// Local snapshot polling interval while the popup is open.
@@ -72,14 +74,15 @@ fn main() -> Result<()> {
 
     rt.block_on(async {
         match cli.command {
-            Cmd::Waybar => cli::waybar::run().await,
-            Cmd::Status { detailed } => cli::status::run(detailed).await,
-            Cmd::Tui { poll_secs } => cli::tui::run(poll_secs).await,
-            Cmd::Cost { provider } => cli::cost::run(provider).await,
-            Cmd::Config {
+            None | Some(Cmd::Limits) => cli::limits::run().await,
+            Some(Cmd::Waybar) => cli::waybar::run().await,
+            Some(Cmd::Status { detailed }) => cli::status::run(detailed).await,
+            Some(Cmd::Tui { poll_secs }) => cli::tui::run(poll_secs).await,
+            Some(Cmd::Cost { provider }) => cli::cost::run(provider).await,
+            Some(Cmd::Config {
                 print,
                 print_waybar_snippet,
-            } => cli::config_cmd::run(print, print_waybar_snippet).await,
+            }) => cli::config_cmd::run(print, print_waybar_snippet).await,
         }
     })
 }
