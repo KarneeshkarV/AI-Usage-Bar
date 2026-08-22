@@ -20,7 +20,7 @@ mod waybar_proto;
 #[command(
     name = "ai-usage-bar",
     version,
-    about = "AI Usage Bar: AI coding usage limits in your Waybar. Default: print the four limits."
+    about = "AI Usage Bar: AI coding usage limits in your Waybar. Default: print the five limits."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -36,7 +36,7 @@ enum Cmd {
         #[arg(long)]
         detailed: bool,
     },
-    /// Print Codex, Claude, Grok, and Cursor limits as a colored dashboard.
+    /// Print Codex, Claude, Grok, Cursor, and OpenCode limits as a colored dashboard.
     Limits,
     /// Interactive terminal popover inspired by CodexBar.
     Tui {

@@ -20,6 +20,7 @@ const CODEX: (u8, u8, u8) = (255, 255, 255); // Codex / OpenAI: white
 const CLAUDE: (u8, u8, u8) = (218, 119, 86); // Claude Code #DA7756
 const GROK: (u8, u8, u8) = (187, 154, 247); // GrokNight magenta #BB9AF7
 const CURSOR: (u8, u8, u8) = (245, 78, 0); // Cursor brand orange #F54E00
+const OPENCODE: (u8, u8, u8) = (59, 130, 246); // OpenCode Go brand blue #3B82F6
 
 const BAR_W: usize = 22;
 const LABEL_W: usize = 8;
@@ -87,7 +88,7 @@ fn render(snap: &Snapshot, style: ResetStyle, color: bool, width: usize) -> Stri
     lines.push(brand_rule(&theme, width));
     lines.push(String::new());
 
-    // The four usage-limit providers, always in this order.
+    // Usage-limit providers, always in this order.
     lines.extend(codex_block(snap, style, &theme, width));
     lines.push(String::new());
     lines.extend(claude_block(snap, style, &theme, width));
@@ -96,21 +97,24 @@ fn render(snap: &Snapshot, style: ResetStyle, color: bool, width: usize) -> Stri
     lines.push(String::new());
     lines.extend(cursor_block(snap, style, &theme, width));
     lines.push(String::new());
+    lines.extend(opencode_block(snap, &theme, width));
+    lines.push(String::new());
 
     lines.join("\n")
 }
 
 fn header(snap: &Snapshot, theme: &Theme, width: usize) -> String {
     let dots = format!(
-        "{} {} {} {}",
+        "{} {} {} {} {}",
         theme.paint(CODEX, true, "●"),
         theme.paint(CLAUDE, true, "●"),
         theme.paint(GROK, true, "●"),
         theme.paint(CURSOR, true, "●"),
+        theme.paint(OPENCODE, true, "●"),
     );
     let title = theme.paint(TEXT, true, "limits");
     let left = format!("{dots}  {title}");
-    let left_plain_len = "● ● ● ●  limits".chars().count();
+    let left_plain_len = "● ● ● ● ●  limits".chars().count();
     let age = relative_refresh(snap);
     let right = theme.paint(OVERLAY, false, &age);
     let right_len = age.chars().count();
@@ -118,14 +122,16 @@ fn header(snap: &Snapshot, theme: &Theme, width: usize) -> String {
     format!("{left}{}{right}", " ".repeat(gap))
 }
 
-/// Hairline rule split into the four harness colors.
+/// Hairline rule split into the five harness colors.
 fn brand_rule(theme: &Theme, width: usize) -> String {
-    let n = width.max(4);
-    let chunk = n / 4;
-    let rem = n - chunk * 4;
+    let colors = [CODEX, CLAUDE, GROK, CURSOR, OPENCODE];
+    let n = width.max(colors.len());
+    let chunk = n / colors.len();
+    let rem = n - chunk * colors.len();
+    let last = colors.len() - 1;
     let mut out = String::new();
-    for (i, color) in [CODEX, CLAUDE, GROK, CURSOR].into_iter().enumerate() {
-        let w = chunk + usize::from(i == 3) * rem;
+    for (i, color) in colors.into_iter().enumerate() {
+        let w = chunk + usize::from(i == last) * rem;
         out.push_str(&theme.paint(dim(color, 0.45), false, &"─".repeat(w)));
     }
     out
@@ -382,6 +388,41 @@ fn cursor_block(snap: &Snapshot, style: ResetStyle, theme: &Theme, width: usize)
     out
 }
 
+fn opencode_block(snap: &Snapshot, theme: &Theme, width: usize) -> Vec<String> {
+    let mut out = vec![section_title("OPENCODE", OPENCODE, None, theme)];
+    match &snap.opencode {
+        None => out.push(fallback_row("unavailable", OPENCODE, theme, width)),
+        Some(o) if o.balance_usd.is_none() && o.local_30d_cost_usd.is_none() => {
+            let msg = o.error.as_deref().unwrap_or("no data");
+            out.push(fallback_row(msg, OPENCODE, theme, width));
+        }
+        Some(o) => {
+            let mut rows = Vec::new();
+            if let Some(b) = o.balance_usd {
+                let detail = if b <= 0.0 {
+                    format!("${b:.2} depleted")
+                } else {
+                    format!("${b:.2} remaining")
+                };
+                rows.push(Row {
+                    label: "balance",
+                    pct: None,
+                    detail,
+                });
+            }
+            if let Some(cost) = o.local_30d_cost_usd {
+                rows.push(Row {
+                    label: "last 30d",
+                    pct: None,
+                    detail: format!("${cost:.2} spent"),
+                });
+            }
+            out.extend(render_rows(&rows, OPENCODE, theme, width));
+        }
+    }
+    out
+}
+
 fn window_row(
     label: &'static str,
     pct: f64,
@@ -487,6 +528,7 @@ mod tests {
     use crate::providers::codex::{self, CodexSnapshot};
     use crate::providers::cursor::{self, CursorSnapshot};
     use crate::providers::grok::{self, GrokSnapshot};
+    use crate::providers::opencode::OpenCodeSnapshot;
     use chrono::TimeZone;
 
     fn utc(y: i32, m: u32, d: u32, h: u32) -> DateTime<Utc> {
@@ -565,6 +607,11 @@ mod tests {
             requests_limit: None,
             error: None,
         });
+        snap.opencode = Some(OpenCodeSnapshot {
+            balance_usd: Some(12.4),
+            local_30d_cost_usd: Some(10.20),
+            error: None,
+        });
         snap
     }
 
@@ -585,9 +632,9 @@ mod tests {
     }
 
     #[test]
-    fn render_lists_all_four_providers() {
+    fn render_lists_all_five_providers() {
         let text = render(&sample_snap(), ResetStyle::Countdown, false, 76);
-        for name in ["CODEX", "CLAUDE", "GROK", "CURSOR"] {
+        for name in ["CODEX", "CLAUDE", "GROK", "CURSOR", "OPENCODE"] {
             assert!(text.contains(name), "missing {name} in:\n{text}");
         }
         assert!(text.contains("plus"));
@@ -598,6 +645,8 @@ mod tests {
         assert!(text.contains("31%"));
         assert!(text.contains("$4.20 / $30.00"));
         assert!(text.contains("$8.00 / $20.00"));
+        assert!(text.contains("$12.40 remaining"));
+        assert!(text.contains("$10.20 spent"));
         assert!(!text.contains('\u{1b}'));
     }
 
@@ -605,11 +654,12 @@ mod tests {
     fn render_marks_missing_providers() {
         let snap = Snapshot::new();
         let text = render(&snap, ResetStyle::Countdown, false, 72);
-        assert_eq!(text.matches("unavailable").count(), 4);
+        assert_eq!(text.matches("unavailable").count(), 5);
         assert!(text.contains("CODEX"));
         assert!(text.contains("CLAUDE"));
         assert!(text.contains("GROK"));
         assert!(text.contains("CURSOR"));
+        assert!(text.contains("OPENCODE"));
         assert!(text.contains("limits"));
         assert!(text.contains("──"));
     }
@@ -646,10 +696,24 @@ mod tests {
     #[test]
     fn harness_colors_are_used() {
         let text = render(&sample_snap(), ResetStyle::Countdown, true, 76);
-        // Codex white, Claude orange, Grok magenta, Cursor orange.
+        // Codex white, Claude orange, Grok magenta, Cursor orange, OpenCode blue.
         assert!(text.contains("\x1b[38;2;255;255;255m"), "{text}");
         assert!(text.contains("\x1b[38;2;218;119;86m"), "{text}");
         assert!(text.contains("\x1b[38;2;187;154;247m"), "{text}");
         assert!(text.contains("\x1b[38;2;245;78;0m"), "{text}");
+        assert!(text.contains("\x1b[38;2;59;130;246m"), "{text}");
+    }
+
+    #[test]
+    fn opencode_depleted_balance_is_labeled() {
+        let mut snap = Snapshot::new();
+        snap.opencode = Some(OpenCodeSnapshot {
+            balance_usd: Some(0.0),
+            local_30d_cost_usd: None,
+            error: None,
+        });
+        let text = render(&snap, ResetStyle::Countdown, false, 72);
+        assert!(text.contains("OPENCODE"), "{text}");
+        assert!(text.contains("$0.00 depleted"), "{text}");
     }
 }
