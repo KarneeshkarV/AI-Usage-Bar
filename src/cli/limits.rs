@@ -214,7 +214,7 @@ fn codex_block(snap: &Snapshot, style: ResetStyle, theme: &Theme, width: usize) 
             let mut rows = Vec::new();
             if let Some(w) = &c.primary {
                 rows.push(window_row(
-                    "session",
+                    codex_window_label(w.window_minutes, "session"),
                     w.used_percent,
                     w.window_minutes,
                     w.resets_at,
@@ -223,7 +223,7 @@ fn codex_block(snap: &Snapshot, style: ResetStyle, theme: &Theme, width: usize) 
             }
             if let Some(w) = &c.secondary {
                 rows.push(window_row(
-                    "weekly",
+                    codex_window_label(w.window_minutes, "weekly"),
                     w.used_percent,
                     w.window_minutes,
                     w.resets_at,
@@ -380,6 +380,17 @@ fn cursor_block(snap: &Snapshot, style: ResetStyle, theme: &Theme, width: usize)
         }
     }
     out
+}
+
+/// Codex CLI 0.149 Plus reports the weekly window as `primary` (10080 min)
+/// with `secondary` null. Label from duration so a 7-day primary is not
+/// shown as "session".
+fn codex_window_label(window_minutes: Option<u32>, fallback: &'static str) -> &'static str {
+    match window_minutes {
+        Some(m) if m >= 24 * 60 => "weekly",
+        Some(_) => "session",
+        None => fallback,
+    }
 }
 
 fn window_row(
@@ -651,5 +662,27 @@ mod tests {
         assert!(text.contains("\x1b[38;2;218;119;86m"), "{text}");
         assert!(text.contains("\x1b[38;2;187;154;247m"), "{text}");
         assert!(text.contains("\x1b[38;2;245;78;0m"), "{text}");
+    }
+
+    #[test]
+    fn codex_seven_day_primary_is_labeled_weekly() {
+        let mut snap = Snapshot::new();
+        snap.codex = Some(CodexSnapshot {
+            account_email: None,
+            plan_type: Some("plus".into()),
+            primary: Some(codex::Window {
+                used_percent: 54.0,
+                window_minutes: Some(10080),
+                resets_at: None,
+            }),
+            secondary: None,
+            credits: None,
+            reset_credits: None,
+            error: None,
+        });
+        let text = render(&snap, ResetStyle::Countdown, false, 76);
+        assert!(text.contains("weekly"), "{text}");
+        assert!(!text.contains("session"), "{text}");
+        assert!(text.contains("54%"), "{text}");
     }
 }
