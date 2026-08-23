@@ -75,12 +75,12 @@ fn print_compact(snap: &Snapshot, show_cost: bool) {
         println!("grok: (unavailable)");
     }
     // Cursor / OpenCode: omit when inactive.
+    if let Some(o) = &snap.opencode {
+        println!("opencode: {}", o.summary_line());
+    }
     if let Some(c) = &snap.cursor {
         println!("cursor: {}", c.summary_line());
         print_status_lines(snap, "cursor");
-    }
-    if let Some(o) = &snap.opencode {
-        println!("opencode: {}", o.summary_line());
     }
     if show_cost && let Some(cost) = &snap.cost {
         println!("30d cost: ${:.2}", cost.total_usd);
@@ -116,6 +116,14 @@ fn print_detailed(snap: &Snapshot, style: ResetStyle, show_cost: bool) {
     } else {
         println!("│  (unavailable)");
     }
+    if snap.opencode.is_some() {
+        println!("├─ OpenCode");
+        if let Some(o) = &snap.opencode {
+            for line in o.detail_lines(style) {
+                println!("│  {line}");
+            }
+        }
+    }
     if snap.cursor.is_some() {
         println!("├─ Cursor");
         if let Some(c) = &snap.cursor {
@@ -123,14 +131,6 @@ fn print_detailed(snap: &Snapshot, style: ResetStyle, show_cost: bool) {
                 println!("│  {line}");
             }
             print_status_lines_detail(snap, "cursor");
-        }
-    }
-    if snap.opencode.is_some() {
-        println!("├─ OpenCode");
-        if let Some(o) = &snap.opencode {
-            for line in o.detail_lines(style) {
-                println!("│  {line}");
-            }
         }
     }
     if show_cost {

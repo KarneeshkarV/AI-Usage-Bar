@@ -95,9 +95,9 @@ fn render(snap: &Snapshot, style: ResetStyle, color: bool, width: usize) -> Stri
     lines.push(String::new());
     lines.extend(grok_block(snap, style, &theme, width));
     lines.push(String::new());
-    lines.extend(cursor_block(snap, style, &theme, width));
-    lines.push(String::new());
     lines.extend(opencode_block(snap, &theme, width));
+    lines.push(String::new());
+    lines.extend(cursor_block(snap, style, &theme, width));
     lines.push(String::new());
 
     lines.join("\n")
@@ -109,8 +109,8 @@ fn header(snap: &Snapshot, theme: &Theme, width: usize) -> String {
         theme.paint(CODEX, true, "●"),
         theme.paint(CLAUDE, true, "●"),
         theme.paint(GROK, true, "●"),
-        theme.paint(CURSOR, true, "●"),
         theme.paint(OPENCODE, true, "●"),
+        theme.paint(CURSOR, true, "●"),
     );
     let title = theme.paint(TEXT, true, "limits");
     let left = format!("{dots}  {title}");
@@ -124,7 +124,7 @@ fn header(snap: &Snapshot, theme: &Theme, width: usize) -> String {
 
 /// Hairline rule split into the five harness colors.
 fn brand_rule(theme: &Theme, width: usize) -> String {
-    let colors = [CODEX, CLAUDE, GROK, CURSOR, OPENCODE];
+    let colors = [CODEX, CLAUDE, GROK, OPENCODE, CURSOR];
     let n = width.max(colors.len());
     let chunk = n / colors.len();
     let rem = n - chunk * colors.len();
@@ -645,9 +645,15 @@ mod tests {
     #[test]
     fn render_lists_all_five_providers() {
         let text = render(&sample_snap(), ResetStyle::Countdown, false, 76);
-        for name in ["CODEX", "CLAUDE", "GROK", "CURSOR", "OPENCODE"] {
+        for name in ["CODEX", "CLAUDE", "GROK", "OPENCODE", "CURSOR"] {
             assert!(text.contains(name), "missing {name} in:\n{text}");
         }
+        let opencode_pos = text.find("OPENCODE").expect("OPENCODE present");
+        let cursor_pos = text.find("CURSOR").expect("CURSOR present");
+        assert!(
+            opencode_pos < cursor_pos,
+            "OpenCode must render before Cursor"
+        );
         assert!(text.contains("plus"));
         assert!(text.contains("max"));
         assert!(text.contains("SuperGrok"));

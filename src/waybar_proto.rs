@@ -65,17 +65,6 @@ impl WaybarLine {
             }
         }
 
-        // Cursor: omit completely when inactive / not refreshed (auto-detect).
-        if let Some(c) = &snap.cursor {
-            tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
-            push_status_line(&mut tooltip, &snap.provider_status, "cursor");
-            if on_bar("cursor") {
-                parts.push(percent_segment("Cu", c.worst_percent()));
-                worst = worst.max(c.worst_percent().unwrap_or(0));
-                state = state.combine(c.state(cfg));
-            }
-        }
-
         // OpenCode: omit when inactive; balance dollars (no percent window).
         if let Some(o) = &snap.opencode {
             tooltip.extend(o.tooltip_lines(cfg.display.reset_style));
@@ -85,6 +74,17 @@ impl WaybarLine {
                 }
                 // Does not contribute to percent-based warn/crit.
                 state = state.combine(o.state(cfg));
+            }
+        }
+
+        // Cursor: omit completely when inactive / not refreshed (auto-detect).
+        if let Some(c) = &snap.cursor {
+            tooltip.extend(c.tooltip_lines(cfg.display.reset_style));
+            push_status_line(&mut tooltip, &snap.provider_status, "cursor");
+            if on_bar("cursor") {
+                parts.push(percent_segment("Cu", c.worst_percent()));
+                worst = worst.max(c.worst_percent().unwrap_or(0));
+                state = state.combine(c.state(cfg));
             }
         }
 
