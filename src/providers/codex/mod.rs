@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod limits;
+pub mod oauth_token_refresh;
 pub mod reset_credits;
 pub mod rpc;
 
@@ -252,6 +253,9 @@ impl Client {
     pub async fn refresh(&mut self) -> Result<Option<CodexSnapshot>> {
         if !self.cfg.enabled {
             return Ok(None);
+        }
+        if let Err(e) = oauth_token_refresh::ensure_fresh_codex_access_token().await {
+            tracing::debug!(error = %e, "codex oauth refresh skipped");
         }
         if self.rpc.is_none() {
             match rpc::RpcClient::spawn(self.cfg.binary.as_deref()).await {
