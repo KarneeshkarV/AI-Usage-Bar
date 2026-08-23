@@ -821,16 +821,6 @@ fn build_cards(app: &App) -> Vec<Card> {
             fallback: grok.error.clone().unwrap_or_else(|| "no data".into()),
         });
     }
-    if let Some(cursor) = &snap.cursor {
-        cards.push(Card {
-            title: "CURSOR",
-            accent: YELLOW,
-            plan: cursor.membership_type.clone(),
-            rows: cursor_rows(app),
-            incident: incident_line(snap, "cursor"),
-            fallback: cursor.error.clone().unwrap_or_else(|| "no data".into()),
-        });
-    }
     if let Some(oc) = &snap.opencode {
         cards.push(Card {
             title: "OPENCODE",
@@ -839,6 +829,16 @@ fn build_cards(app: &App) -> Vec<Card> {
             rows: opencode_rows(app),
             incident: None,
             fallback: oc.error.clone().unwrap_or_else(|| "no data".into()),
+        });
+    }
+    if let Some(cursor) = &snap.cursor {
+        cards.push(Card {
+            title: "CURSOR",
+            accent: YELLOW,
+            plan: cursor.membership_type.clone(),
+            rows: cursor_rows(app),
+            incident: incident_line(snap, "cursor"),
+            fallback: cursor.error.clone().unwrap_or_else(|| "no data".into()),
         });
     }
     cards
