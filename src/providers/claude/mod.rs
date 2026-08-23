@@ -2,22 +2,18 @@ pub mod api;
 pub mod cookies;
 pub mod credentials;
 pub mod oauth;
+pub mod oauth_token_refresh;
 pub mod pty;
 pub mod usage_api;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{ClaudeProviderConfig, Config, ResetStyle};
 use crate::pace::{self, DEFAULT_SESSION_MINUTES, DEFAULT_WEEKLY_MINUTES};
 use crate::util::time::reset_label;
 use crate::waybar_proto::State;
-
-/// Skip the HTTP call once we are within this many ms of expiry — the server
-/// rejects expired tokens with a 429 that looks like a generic rate-limit.
-const EXPIRY_GRACE_MS: i64 = 30_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaudeSnapshot {
@@ -272,14 +268,19 @@ impl Client {
     }
 
     async fn try_oauth_usage(&self) -> Result<Option<ClaudeData>> {
-        let info = match credentials::read_token() {
+        let info = match oauth_token_refresh::ensure_fresh_claude_access_token().await {
             Ok(i) => i,
-            Err(_) => return Ok(None),
+            Err(e) => {
+                // Missing credentials file stays a skip so cookies/pty can still run.
+                if credentials::credentials_path()
+                    .map(|p| !p.is_file())
+                    .unwrap_or(true)
+                {
+                    return Ok(None);
+                }
+                return Err(e);
+            }
         };
-
-        if let Some(msg) = expiry_message(info.expires_at_ms) {
-            return Err(anyhow::anyhow!(msg));
-        }
 
         let mut data = usage_api::fetch(&info.access_token).await?;
         if data.plan_type.is_none() {
@@ -334,34 +335,5 @@ impl Client {
                 Err(e)
             }
         }
-    }
-}
-
-fn expiry_message(expires_at_ms: Option<i64>) -> Option<String> {
-    let expires = expires_at_ms?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()?
-        .as_millis() as i64;
-    let delta_ms = expires - now;
-    if delta_ms > EXPIRY_GRACE_MS {
-        return None;
-    }
-    Some(format!("token expired {} ago", format_ms_ago(-delta_ms)))
-}
-
-fn format_ms_ago(ms: i64) -> String {
-    let secs = ms.max(0) / 1000;
-    let days = secs / 86_400;
-    let hours = (secs % 86_400) / 3_600;
-    let mins = (secs % 3_600) / 60;
-    if days > 0 {
-        format!("{days}d {hours}h")
-    } else if hours > 0 {
-        format!("{hours}h {mins}m")
-    } else if mins > 0 {
-        format!("{mins}m")
-    } else {
-        "just now".into()
     }
 }

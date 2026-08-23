@@ -55,7 +55,12 @@ struct ApiCredit {
 
 /// Best-effort fetch. Returns `Err` when credentials are missing or the API fails.
 pub async fn fetch() -> Result<ResetCreditsSnapshot> {
-    let tokens = auth::read_tokens()?;
+    let tokens = super::oauth_token_refresh::ensure_fresh_codex_access_token()
+        .await
+        .or_else(|e| {
+            tracing::debug!(error = %e, "codex oauth refresh failed; using stored access token");
+            auth::read_tokens()
+        })?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(TIMEOUT_SECS))
         .user_agent(USER_AGENT)
