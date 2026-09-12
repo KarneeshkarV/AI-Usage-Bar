@@ -268,7 +268,9 @@ impl Client {
             }
         }
         let rpc = self.rpc.as_mut().unwrap();
-        let mut snap = match limits::fetch(rpc).await {
+        // The limits RPC and the reset-credits HTTP call are independent.
+        let (limits_res, credits_res) = tokio::join!(limits::fetch(rpc), reset_credits::fetch());
+        let mut snap = match limits_res {
             Ok(s) => s,
             Err(e) => {
                 // Recycle on error; next refresh will respawn.
@@ -276,7 +278,7 @@ impl Client {
                 CodexSnapshot::empty_error(format!("rpc: {e}"))
             }
         };
-        enrich_reset_credits(&mut snap).await;
+        apply_reset_credits(&mut snap, credits_res);
         Ok(Some(snap))
     }
 }
@@ -284,7 +286,11 @@ impl Client {
 /// Attach reset-credit inventory when OAuth credentials are available.
 /// Failures are silent — usage windows still render without this enrichment.
 async fn enrich_reset_credits(snap: &mut CodexSnapshot) {
-    match reset_credits::fetch().await {
+    apply_reset_credits(snap, reset_credits::fetch().await);
+}
+
+fn apply_reset_credits(snap: &mut CodexSnapshot, res: Result<reset_credits::ResetCreditsSnapshot>) {
+    match res {
         Ok(rc) => snap.reset_credits = Some(rc),
         Err(e) => {
             tracing::debug!(error = %e, "codex reset credits unavailable");

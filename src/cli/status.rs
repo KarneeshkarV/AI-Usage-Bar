@@ -38,20 +38,32 @@ async fn one_shot() -> Result<Snapshot> {
     let mut cursor_client = cursor::Client::new(cfg.providers.cursor.clone());
     let mut opencode_client = opencode::Client::new(cfg.providers.opencode.clone());
 
-    let (codex_res, claude_res, grok_res, cursor_res, opencode_res) = tokio::join!(
+    // Providers and the local cost scan are independent, so run them together.
+    let (codex_res, claude_res, grok_res, cursor_res, opencode_res, cost_res) = tokio::join!(
         codex_client.refresh(),
         claude_client.refresh(),
         grok_client.refresh(),
         cursor_client.refresh(),
         opencode_client.refresh(),
+        crate::cost::scan_both(),
     );
     snap.codex = codex_res.ok().flatten();
     snap.claude = claude_res.ok().flatten();
     snap.grok = grok_res.ok().flatten();
     snap.cursor = cursor_res.ok().flatten();
     snap.opencode = opencode_res.ok().flatten();
-    snap.cost = crate::cost::scan_both().await.ok();
+    snap.cost = cost_res.ok();
     snap.refreshed_at = chrono::Utc::now();
+    // One-shot runs do not poll provider status pages, so keep whatever the
+    // Waybar daemon last wrote instead of blanking it.
+    if let Ok(prev) = snapshot::read() {
+        snap.provider_status = prev.provider_status;
+        snap.celebrating_until = prev.celebrating_until;
+    }
+    // Persist so a repeat run inside the staleness window is free.
+    if let Err(e) = snapshot::write(&snap) {
+        tracing::debug!(error = %e, "snapshot write failed");
+    }
     Ok(snap)
 }
 

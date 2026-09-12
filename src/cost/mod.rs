@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use self::pricing::PricingTable;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CostReport {
     pub total_usd: f64,
@@ -79,17 +81,28 @@ pub async fn scan_claude() -> Result<CostReport> {
     Ok(acc.finalize("claude"))
 }
 
+/// Scan both providers' JSONL logs.
+///
+/// The scan itself is blocking file I/O, so it runs on the blocking pool
+/// instead of stalling the async runtime. Callers can join it with network
+/// work.
 pub async fn scan_both() -> Result<CostReport> {
     let pricing = pricing::load_pricing().await?;
+    tokio::task::spawn_blocking(move || scan_both_blocking(&pricing))
+        .await
+        .context("cost scan task")?
+}
+
+fn scan_both_blocking(pricing: &PricingTable) -> Result<CostReport> {
     let (start, end) = window();
     let mut acc = ReportAcc::new(start, end, pricing.source.clone());
     for root in codex_roots()? {
-        if let Err(e) = codex_jsonl::scan_dir(&root, &mut acc, &pricing) {
+        if let Err(e) = codex_jsonl::scan_dir(&root, &mut acc, pricing) {
             tracing::warn!(root=%root.display(), error=%e, "codex scan failed");
         }
     }
     let claude_root = claude_root()?;
-    if let Err(e) = claude_jsonl::scan_dir(&claude_root, &mut acc, &pricing) {
+    if let Err(e) = claude_jsonl::scan_dir(&claude_root, &mut acc, pricing) {
         tracing::warn!(root=%claude_root.display(), error=%e, "claude scan failed");
     }
     Ok(acc.finalize_combined())
