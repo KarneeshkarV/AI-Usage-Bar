@@ -6,10 +6,13 @@ use crate::providers::{claude, codex, cursor, grok, opencode};
 use crate::snapshot::{self, Snapshot};
 use crate::util::spark;
 
-/// Cached Waybar snapshot when it is younger than 30 minutes, else a live poll.
+/// How long a cached snapshot is served before a command polls again.
+const MAX_SNAPSHOT_AGE: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Cached Waybar snapshot when it is fresh enough, else a live poll.
 pub async fn load_snapshot() -> Result<Snapshot> {
     match snapshot::read() {
-        Ok(s) if !s.is_stale(std::time::Duration::from_secs(30 * 60)) => Ok(s),
+        Ok(s) if !s.is_stale(MAX_SNAPSHOT_AGE) => Ok(s),
         _ => one_shot().await,
     }
 }
