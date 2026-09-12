@@ -63,8 +63,8 @@ pub fn scan_dir(root: &Path, acc: &mut ReportAcc, pricing: &PricingTable) -> Res
     // to be recognised at all. Rollout names embed a timestamp under a dated
     // directory, so sorting by path folds a parent before its forks.
     //
-    // This only suppresses the replay's first row; see the ignored test at
-    // the bottom of this file for the rebilling that remains.
+    // The fold then absorbs the replay by keeping a high-water mark per
+    // session, so only usage past the parent's last total is billed.
     let mut files: Vec<_> = WalkDir::new(root)
         .into_iter()
         .filter_map(|r| r.ok())
@@ -131,9 +131,12 @@ fn fold_file(
                     let di = total_in.saturating_sub(st.cum_input);
                     let dc = total_cached.saturating_sub(st.cum_cached);
                     let do_ = total_out.saturating_sub(st.cum_output);
-                    st.cum_input = total_in;
-                    st.cum_cached = total_cached;
-                    st.cum_output = total_out;
+                    // High-water mark, not assignment. A fork replays its
+                    // parent's counters, which would otherwise drop the
+                    // baseline and bill that history a second time.
+                    st.cum_input = st.cum_input.max(total_in);
+                    st.cum_cached = st.cum_cached.max(total_cached);
+                    st.cum_output = st.cum_output.max(total_out);
                     (di, dc, do_)
                 } else if let Some((di, dc, do_)) = t.last {
                     st.cum_input += di;
@@ -331,15 +334,7 @@ mod tests {
     /// A fork replays its parent's cumulative counters under the fork's own
     /// timestamp. Those replayed rows are already paid for, so only the usage
     /// past the parent's last total may be billed.
-    ///
-    /// Ignored: this fails today and always has. A replayed row assigns the
-    /// counters instead of raising a high-water mark, so the counters fall
-    /// back to the start of the replay and that history is billed again. On
-    /// real logs it inflates the codex figure by about 40%. The fix is to
-    /// take `.max()` of the stored and incoming totals, which changes
-    /// reported spend, so it is kept out of this performance work.
     #[test]
-    #[ignore = "known pre-existing bug: forks rebill replayed history"]
     fn forked_session_does_not_rebill_the_replayed_history() {
         let dir = tempfile::tempdir().unwrap();
         let ts = Utc::now().to_rfc3339();
