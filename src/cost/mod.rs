@@ -4,10 +4,10 @@ pub mod codex_jsonl;
 pub mod pricing;
 
 use anyhow::{Context, Result};
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use self::pricing::PricingTable;
 
@@ -134,6 +134,45 @@ fn codex_roots() -> Result<Vec<PathBuf>> {
 fn claude_root() -> Result<PathBuf> {
     let home = dirs::home_dir().context("no home")?;
     Ok(home.join(".claude").join("projects"))
+}
+
+/// One priced row, emitted by a scanner before the accumulator folds it in.
+pub struct CostRow {
+    pub day: NaiveDate,
+    pub model: String,
+    pub usd: f64,
+}
+
+/// JSONL files under `root` that can still hold a row on or after `since`.
+///
+/// These logs are append-only, so a file last written before the window
+/// started cannot contain a row inside it.
+///
+/// Only the claude scanner uses this. Codex rollouts cannot be pruned: a fork
+/// replays its parent's counters, so dropping the parent would bill that
+/// history again.
+pub fn candidate_files(root: &Path, since: NaiveDate) -> Vec<PathBuf> {
+    if !root.exists() {
+        return Vec::new();
+    }
+    let mut files: Vec<PathBuf> = walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_map(|r| r.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        .filter(|e| {
+            let modified = e.metadata().ok().and_then(|m| m.modified().ok());
+            match modified {
+                // Keep anything we cannot date; the row filter still applies.
+                None => true,
+                Some(t) => DateTime::<Utc>::from(t).date_naive() >= since,
+            }
+        })
+        .map(|e| e.into_path())
+        .collect();
+    // Stable order keeps the dedupe deterministic across runs.
+    files.sort();
+    files
 }
 
 pub struct ReportAcc {

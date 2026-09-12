@@ -1,14 +1,15 @@
 use anyhow::Result;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use walkdir::WalkDir;
 
-use super::ReportAcc;
+use rayon::prelude::*;
+
 use super::pricing::PricingTable;
+use super::{CostRow, ReportAcc, candidate_files};
 
 #[derive(Deserialize)]
 struct Line {
@@ -28,30 +29,40 @@ struct Line {
     cost_usd: Option<f64>,
 }
 
+/// Files decoded per batch. Caps peak memory at a batch's worth of rows
+/// instead of the whole history, which matters on a machine with years of
+/// logs.
+const BATCH: usize = 64;
+
 pub fn scan_dir(root: &Path, acc: &mut ReportAcc, pricing: &PricingTable) -> Result<()> {
-    if !root.exists() {
-        return Ok(());
-    }
+    let files = candidate_files(root, acc.start);
+    // Files parse independently; the cross-file dedupe happens on the merge,
+    // in sorted file order so the result does not depend on thread timing.
     let mut seen_keys: HashSet<String> = HashSet::new();
-    for entry in WalkDir::new(root)
-        .into_iter()
-        .filter_map(|r| r.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().extension().map(|x| x == "jsonl").unwrap_or(false))
-    {
-        if let Err(e) = scan_file(entry.path(), acc, pricing, &mut seen_keys) {
-            tracing::trace!(file=%entry.path().display(), error=%e, "skip");
+    for batch in files.chunks(BATCH) {
+        let per_file: Vec<Vec<(String, CostRow)>> = batch
+            .par_iter()
+            .map(|path| {
+                let mut rows = Vec::new();
+                if let Err(e) = scan_file(path, &mut rows, pricing) {
+                    tracing::trace!(file=%path.display(), error=%e, "skip");
+                }
+                rows
+            })
+            .collect();
+        for (key, row) in per_file.into_iter().flatten() {
+            // A key is claimed by the first row that carries it, priced or
+            // not, so an unpriced duplicate still suppresses later copies.
+            if !key.is_empty() && !seen_keys.insert(key) {
+                continue;
+            }
+            acc.add("claude", row.day, &row.model, row.usd);
         }
     }
     Ok(())
 }
 
-fn scan_file(
-    path: &Path,
-    acc: &mut ReportAcc,
-    pricing: &PricingTable,
-    seen_keys: &mut HashSet<String>,
-) -> Result<()> {
+fn scan_file(path: &Path, rows: &mut Vec<(String, CostRow)>, pricing: &PricingTable) -> Result<()> {
     let f = File::open(path)?;
     let reader = BufReader::new(f);
     for line in reader.lines() {
@@ -76,10 +87,6 @@ fn scan_file(
                     parsed.timestamp.clone().unwrap_or_default()
                 )
             });
-        if !key.is_empty() && !seen_keys.insert(key) {
-            continue;
-        }
-
         let day = parsed
             .timestamp
             .as_deref()
@@ -128,12 +135,7 @@ fn scan_file(
                     + output as f64 * price.output;
             }
         }
-        if usd > 0.0 {
-            acc.add("claude", day, &model, usd);
-        } else {
-            // ensure unused day var doesn't warn when nothing matches
-            let _: NaiveDate = day;
-        }
+        rows.push((key, CostRow { day, model, usd }));
     }
     Ok(())
 }

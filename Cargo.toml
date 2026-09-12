@@ -27,6 +27,7 @@ portable-pty = "0.8"
 secret-service = { version = "4", features = ["rt-tokio-crypto-rust"] }
 base64 = "0.22"
 futures = "0.3"
+rayon = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 aes = "0.8"
 cbc = { version = "0.1", features = ["block-padding", "alloc"] }
